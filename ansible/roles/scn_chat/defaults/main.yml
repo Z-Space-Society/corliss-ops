@@ -10,12 +10,18 @@
 # No postgres, redis or object-store dependency.
 #
 # Version policy (ADR-0012): a release tag such as v0.2.2, or `latest`, the
-# newest vX.Y.Z tag upstream, looked up each time the play runs. This default
-# follows latest; a cluster pins a tag with `scn-config nonint set-version
-# scn-chat <tag>`, which records it in inventory/local.yml over this. The play
-# rebuilds and restarts only when the checkout moved, and the manifest records
-# `git describe` of what was deployed.
-scn_chat_version: "latest"
+# newest vX.Y.Z tag upstream, looked up each time the play runs. A cluster can
+# record its own with `scn-config nonint set-version scn-chat <tag>`, in
+# inventory/local.yml over this. The play rebuilds and restarts only when the
+# checkout moved, and the manifest records `git describe` of what was deployed.
+#
+# This default is pinned, not `latest`. gel.chat syncs its spaces through the
+# PDS, and the two must be on the same spaces alpha: each alpha removes the
+# previous one's methods with no aliases. On `latest`, zai-autodeploy would
+# deploy a gel.chat release within a minute of its tag, ahead of the PDS it
+# needs. v0.19.1 is on the 2026-10-29 alpha, matching the pds role's
+# pds_revision. Move this pin and pds_revision in the same change (#104).
+scn_chat_version: "v0.19.1"
 scn_chat_repo_url: "https://tangled.org/scnorg.tngl.sh/gel.chat"
 
 # Node.js: pinned LTS tarball with its SHA-256, the tarball + checksum

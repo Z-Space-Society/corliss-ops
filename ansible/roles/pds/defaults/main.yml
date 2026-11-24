@@ -29,7 +29,9 @@
 #
 # That alpha is a hard cut: every com.atproto.simplespace.* method is gone, with
 # no aliases, so a client still calling them fails here. scn-chat must be on the
-# 20261029 alpha too; deploy the two together.
+# 20261029 alpha too; deploy the two together. scn_chat_version (the scn_chat
+# role's defaults) is pinned to a release on this alpha: move it in the same
+# change as pds_revision.
 #
 # Checked against be466e5 before bumping: the four build features below and
 # every PDS_* name the role's templates write still exist. The first boot after
