@@ -62,7 +62,7 @@ them now.
 | `corliss.json` | [`corliss`](corliss.md) | the tag `corliss_version` resolved to |
 | `open-webui.json` | [`open-webui`](open-webui.md) | `openwebui_version` |
 | `happyview.json` | [`happyview`](happyview.md) | `happyview_version` |
-| `sync-relay.json` | [`scn_notes`](scn_notes.md) | `scn_notes_version` |
+| `scn-notes.json` | [`scn_notes`](scn_notes.md) | `scn_notes_version` |
 | `pds.json` | [`pds`](pds.md) | `pds_version` |
 | `beszel.json` | [`beszel`](beszel.md) | `beszel_version` |
 | `scn-chat.json` | [`scn_chat`](scn_chat.md) | `git describe` of the checkout `scn_chat_version` resolved to |

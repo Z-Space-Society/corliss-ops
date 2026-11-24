@@ -12,7 +12,7 @@ that makes claims nothing checks.
 ## 1. Inventory and CTID
 
 - Add the host to [`ansible/inventory/hosts.yml`](../ansible/inventory/hosts.yml)
-  under `service_containers`, named as the service (e.g. `sync-relay`).
+  under `service_containers`, named as the service (e.g. `scn-notes`).
 - Give it a `default_ctid` there: a free number in its tier's range (see
   [Networking](README.md#networking)). It is only what `scn-config` proposes.
 - Assign it on each cluster with `scn-config`. The assignment is runtime data in

@@ -46,7 +46,7 @@
       - redis
       - object-store
       - proxy
-      - sync-relay
+      - scn-notes
       - litellm
       - happyview
       - pds
@@ -66,7 +66,7 @@
       redis: { role: redis }
       object-store: { role: object_store, var: garage_version }
       proxy: { role: proxy, var: caddy_apt_version }
-      sync-relay: { role: scn_notes, var: scn_notes_version }
+      scn-notes: { role: scn_notes, var: scn_notes_version }
       litellm: { role: litellm, var: litellm_version }
       happyview: { role: happyview, var: happyview_version }
       pds: { role: pds, var: pds_version }

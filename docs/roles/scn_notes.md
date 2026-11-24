@@ -7,8 +7,8 @@ scn-sync-relay before v0.7.0) **natively** as the cluster's SCN Notes service an
 to [`postgres`](postgres.md).
 
 - **Source:** [`ansible/roles/scn_notes/`](../../ansible/roles/scn_notes/)
-- **Applied by:** [`provision.yml`](../../ansible/provision.yml) (configure play, `hosts: sync-relay`, **after** the postgres play)
-- **Target:** the `sync-relay` CT (CTID 113 by convention — platform tier, 110–119), over SSH. Public through the [`proxy`](proxy.md) at `notes.<domain>`, and at `sync.<domain>` and `mcp.<domain>` until they retire
+- **Applied by:** [`provision.yml`](../../ansible/provision.yml) (configure play, `hosts: scn-notes`, **after** the postgres play)
+- **Target:** the `scn-notes` CT (CTID 113 by convention — platform tier, 110–119), over SSH. Public through the [`proxy`](proxy.md) at `notes.<domain>`, and at `sync.<domain>` and `mcp.<domain>` until they retire
 - **Design:** [ADR-0007](../decisions/0007-sync-relay-and-space-membership.md)
 
 ## Purpose
@@ -82,7 +82,7 @@ lighter.
 | Wait for the MCP listener | `wait_for` (`127.0.0.1:7031`) | The second listener binds separately and can fail on its own. |
 | Check the `notes.` listener | `uri` (`127.0.0.1:7032/health`) | The third listener binds separately, and the relay refuses to start on a public URL with a path or trailing slash. |
 | Clear away the pre-v0.7.0 names | `file`, `user`, `group` (`state=absent`) | `/etc/scn-sync-relay` (which held the old env file and its secrets), the `scn-sync-relay` user and group. After the smoke test, so a failed upgrade leaves them to look at. |
-| Record the manifest | `include_role: manifest` (`scn_notes_version`) | Last task, after the smoke test, so a service that failed it never claims a version. Writes `sync-relay.json` to Garage for Corliss's `/systems/`. Warns and carries on if the write fails. See [`manifest`](manifest.md). |
+| Record the manifest | `include_role: manifest` (`scn_notes_version`) | Last task, after the smoke test, so a service that failed it never claims a version. Writes `scn-notes.json` to Garage for Corliss's `/systems/`. Warns and carries on if the write fails. See [`manifest`](manifest.md). |
 
 ### Handlers
 
@@ -130,7 +130,7 @@ not DR-critical: losing it costs a regenerate and a replay of both roles), and
 ## Dependencies
 
 - [`postgres`](postgres.md) — must be provisioned and SSH-reachable, including
-  for a `--limit sync-relay` run, because the DB tasks are delegated to it.
+  for a `--limit scn-notes` run, because the DB tasks are delegated to it.
 - [`corliss`](corliss.md) at v1.4.0 or later, provisioned first: the relay
   fetches its JWKS at that internal address, and only that release issues
   tokens the relay accepts.
@@ -246,12 +246,16 @@ not have.
 > [!note] Some names still say sync relay, on purpose
 > The role and its variables follow the software, `scn-notes`, as do the unix
 > user, unit, paths and env-var prefix. The crate was `scn-sync-relay` before
-> v0.7.0 and the role took its current name later, a rename of Ansible names
-> only. The inventory host `sync-relay`, the manifest `sync-relay.json`, the
-> `scn_sync_relay` database and role, Corliss's `SYNC_RELAY_URL` and
-> `SYNC_RELAY_SERVICE_TOKEN`, and the secret files
-> `/root/.zai-secrets/sync_relay_db_password` and `sync_relay_service_token`
-> keep the old name, because each is recorded state on a cluster or read by
-> another repo, so renaming it changes a live box (a changed secret path mints
-> a new password the database does not know). What a full rename would take is
-> scoped in [#107](https://github.com/Z-Space-Society/corliss-ops/issues/107).
+> v0.7.0 and the role took its current name later. The inventory host
+> followed, `sync-relay` becoming `scn-notes`, which a cluster takes with
+> [`rename-service.yml`](../../ansible/rename-service.yml) before its first
+> provision on that release: it moves the CTID in `inventory/local.yml` and
+> the deploy records in Garage, and deletes the old Beszel system, so the
+> relay's metrics history starts over. The `scn_sync_relay` database and role,
+> Corliss's `SYNC_RELAY_URL` and `SYNC_RELAY_SERVICE_TOKEN`, and the secret
+> files `/root/.zai-secrets/sync_relay_db_password` and
+> `sync_relay_service_token` keep the old name, because each is recorded
+> state on a cluster or read by another repo, so renaming it changes a live
+> box (a changed secret path mints a new password the database does not
+> know). What the rest of the rename would take is scoped in
+> [#107](https://github.com/Z-Space-Society/corliss-ops/issues/107).

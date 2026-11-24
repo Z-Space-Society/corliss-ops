@@ -42,7 +42,7 @@ flowchart TB
             proxy["proxy · 110 · Caddy<br/>LAN-facing edge, dual-homed<br/>:80 / :443"]
             happyview["happyview · 111<br/>ATProto AppView, membership registry<br/>:3000"]
             litellm["litellm · 112<br/>OpenAI-compatible gateway<br/>+ co-located CPU embedder<br/>:4000"]
-            relay["sync-relay · 113<br/>Automerge sync server + MCP<br/>:7030 sync · :7031 MCP"]
+            relay["scn-notes · 113<br/>Automerge sync server + MCP<br/>:7030 sync · :7031 MCP"]
             pds["pds · 114<br/>in-house ATProto PDS, SQLite<br/>:3000"]
         end
 
@@ -105,13 +105,13 @@ to it* — platform CTs are consumed by other services, application CTs are
 consumed by members. That rule does **not** separate core from platform: what
 makes core infra core is that it is the data foundations, storage with no logic
 of its own. `corliss` is an application despite doing the authentication;
-`litellm` and `sync-relay` stay platform even though a member's own client
+`litellm` and `scn-notes` stay platform even though a member's own client
 connects to each directly, because neither has a page anyone lands on. See
 [CTID tiers](README.md#networking).
 
 **Three edges worth noticing:**
 
-- `sync-relay` is routed at `notes.<domain>`, and at `sync.<domain>` and
+- `scn-notes` is routed at `notes.<domain>`, and at `sync.<domain>` and
   `mcp.<domain>` until they retire, because the relay verifies a Corliss
   access token on every connection. Its `/internal/` prefix is never routed:
   the `notes.` listener does not serve it, and `sync.` answers it 404 at the
@@ -175,7 +175,7 @@ flowchart LR
         p7["open-webui"]
         p8["scn-chat"]
         p9["happyview"]
-        p10["sync-relay<br/>~15–30 min, cargo build on a cold CT"]
+        p10["scn-notes<br/>~15–30 min, cargo build on a cold CT"]
         p11["pds<br/>cargo build too"]
         p12["beszel<br/>writes the agent token"]
         p13["monitor-agent.yml · scn-config Monitoring Agents<br/>every CT's agent, now that the hub is up"]
@@ -205,12 +205,12 @@ assignment](README.md#service-ctid-assignment).
 | Must come first | Because |
 | --------------- | ------- |
 | `object-store` | it is the restic backend `backup.yml` writes to, and it creates the bucket and key every service play's [manifest](roles/manifest.md) write needs, so `provision.yml` runs it first |
-| `postgres` | `happyview`, `litellm`, `sync-relay`, `corliss` and `open-webui` each create their own role + database on it |
+| `postgres` | `happyview`, `litellm`, `scn-notes`, `corliss` and `open-webui` each create their own role + database on it |
 | `redis` | `open-webui` builds its `REDIS_URL` from that CT's address |
 | `litellm` | `corliss` and `open-webui` read keys only its play can mint (see [Known gotchas](gotchas.md)) |
 | `beszel` | every CT's [agent](roles/monitor_agent.md) enrolls with the token its play writes. A CT provisioned before it skips its agent, and `monitor-agent.yml` installs it afterwards |
 
-`corliss` additionally needs `sync-relay`, `redis`, `object-store` and `proxy`
+`corliss` additionally needs `scn-notes`, `redis`, `object-store` and `proxy`
 to have been **assigned** — its `/systems/` probe URLs derive from `hostvars`
 unguarded. That is an inventory dependency, not an ordering one: `scn-config` is
 the fix, no provisioning required.

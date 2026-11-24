@@ -117,7 +117,7 @@ itself from this repo.
    cd /opt/zai-ops/ansible
    # provision each — create over the API, configure over SSH.
    #    object store first: it's the restic backend the backup job writes to.
-   #    postgres before happyview/litellm/sync-relay/corliss/open-webui —
+   #    postgres before happyview/litellm/scn-notes/corliss/open-webui —
    #    each of those roles creates its own role + database on the postgres CT.
    ansible-playbook provision.yml --limit object-store
    ansible-playbook provision.yml --limit postgres
@@ -126,7 +126,7 @@ itself from this repo.
    ansible-playbook provision.yml --limit proxy
    ansible-playbook provision.yml --limit happyview
    ansible-playbook provision.yml --limit litellm
-   ansible-playbook provision.yml --limit sync-relay # ~15-30 min: builds
+   ansible-playbook provision.yml --limit scn-notes # ~15-30 min: builds
                                                   #   from source on a cold CT
    ansible-playbook provision.yml --limit pds        # ~15-30 min: builds
                                                   #   from source on a cold CT

@@ -5,7 +5,7 @@
 # binaries, then clean the build tree (~6 GB) — a cold first run is 15–30 min.
 #
 # The PDS is SQLite-only with no Postgres / no other service dependency, so
-# unlike happyview/sync-relay this role has no delegated provisioning tasks on
+# unlike happyview/scn-notes this role has no delegated provisioning tasks on
 # the postgres CT. Ordering in provision.yml is cosmetic.
 
 # --- Service account + directories -----------------------------------------

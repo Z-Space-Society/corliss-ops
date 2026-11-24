@@ -55,6 +55,29 @@
           (or re-run bootstrap.sh, which records it automatically).
       run_once: true
 
+    - name: Fail fast if a CTID is recorded under a name the blueprint dropped
+      # A service renamed in inventory/hosts.yml keeps its CTID under the old
+      # name in local.yml until rename-service.yml moves it. Every blueprint
+      # service has a default_ctid; a host with a ctid and none is that old
+      # name. Without this, the new name reads as unassigned and the message
+      # below sends the operator to scn-config, where assigning it a fresh
+      # CTID would build a second container beside the one holding the data.
+      # groups[] is the whole inventory whatever --limit says, so a run on
+      # any one service stops here.
+      ansible.builtin.assert:
+        that: _stale_names | length == 0
+        fail_msg: >-
+          {{ _stale_names | join(', ') }} has a CTID in inventory/local.yml but
+          is no longer a service in the blueprint. If it was renamed, run:
+          ansible-playbook rename-service.yml -e old=<old name> -e new=<new name>
+      vars:
+        _stale_names: >-
+          {{ groups['service_containers']
+             | map('extract', hostvars) | selectattr('ctid', 'defined')
+             | rejectattr('default_ctid', 'defined')
+             | map(attribute='inventory_hostname') | list }}
+      run_once: true
+
     - name: Fail fast if the service has no CTID assignment
       # ctid is supplied only by the runtime assignment (inventory/local.yml).
       # Without it ansible_host and the netif IP can't resolve, so refuse early
@@ -255,8 +278,8 @@
   roles:
     - happyview
 
-# sync-relay runs AFTER postgres: its role creates the scn_sync_relay role +
-# database ON the postgres CT (delegate_to: postgres). A --limit sync-relay run
+# scn-notes runs AFTER postgres: its role creates the scn_sync_relay role +
+# database ON the postgres CT (delegate_to: postgres). A --limit scn-notes run
 # still needs postgres already provisioned (its host facts + SSH reachability are
 # required for the delegated DB tasks). First run takes ~15–30 min on a cold CT
 # because cargo build --release compiles the full Rust dependency graph.
@@ -267,13 +290,13 @@
 # after corliss, whose JWKS it fetches. See
 # docs/decisions/0007-sync-relay-and-space-membership.md.
 - name: Configure the SCN sync relay
-  hosts: sync-relay
+  hosts: scn-notes
   gather_facts: true
   roles:
     - scn_notes
 
 # pds runs AFTER nothing in particular: atproto-pds is SQLite-only, so unlike
-# happyview/sync-relay there is no delegated postgres role to provision first.
+# happyview/scn-notes there is no delegated postgres role to provision first.
 # First run takes ~15–30 min on a cold CT because cargo build --release
 # compiles the full Rust dependency graph. Its public route is pds.<domain>
 # (see the proxy role).

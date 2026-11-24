@@ -53,6 +53,11 @@ writes the agent's fingerprint as a hash of the cluster domain and inventory
 name rather than letting the agent derive one from the machine id. Otherwise a
 rebuilt CT would show up as a second system, with the old one left down.
 
+**A renamed service** enrolls as a new system, since its fingerprint follows
+the name. [`rename-service.yml`](../../ansible/rename-service.yml) stops the
+old agent and deletes the old system first, so nothing is left down; the
+service's metrics history starts over.
+
 ## Tasks
 
 | Task | Module | Why |

@@ -113,9 +113,9 @@ ansible-playbook provision.yml --limit proxy    # or provision one by hand
   not held in a UI database — so the CT holds nothing that needs backing up. Only
   one public hostname should point at a given proxy at a time (controlled in
   DNS).
-- **Every other CT** (postgres, redis, happyview, litellm, sync-relay, pds,
+- **Every other CT** (postgres, redis, happyview, litellm, scn-notes, pds,
   corliss, open-webui, scn-chat, beszel) lives only on the internal network and is
-  reached through the proxy. [`sync-relay`](roles/scn_notes.md) serves SCN Notes at
+  reached through the proxy. [`scn-notes`](roles/scn_notes.md) serves SCN Notes at
   `notes.<domain>` (MCP at `/mcp`, the plugin at `/v1/`) and, until they
   retire, at `sync.<domain>` and `mcp.<domain>`; `/internal/` is left
   unrouted. [`beszel`](roles/beszel.md), the
@@ -377,6 +377,7 @@ see [Using the system monitor](monitoring.md#adding-a-machine).
 | `site.yml`            | CT 100 (local) | Configure the control node (applies `control_node`). Run by `scn-config`'s Control Node Setup |
 | `verify-proxmox.yml`  | CT 100 (local) | Read-only check that the API token authenticates. Run by Control Node Setup, after `site.yml` |
 | `assign.yml`          | CT 100 (local) | Record service → CTID assignments in runtime inventory (the `scn-config` engine) |
+| `rename-service.yml`  | CT 100 (local) + SSH | Move a service the blueprint renamed (`-e old=<name> -e new=<name>`): its CTID in runtime inventory, its deploy records in Garage, and its Beszel system, which is deleted so the new name enrolls fresh. Run once per cluster before the first provision on the release that renames it; `provision.yml` refuses to start while a CTID is recorded under a name the blueprint dropped. Not in `scn-config`: a one-time migration, not an operator flow |
 | `set-domain.yml`      | CT 100 (local) | Record the cluster's public base domain in runtime inventory (the engine behind `scn-config`'s Cluster Settings, Domains row) |
 | `set-handle-domain.yml` | CT 100 (local) | Record where the PDS issues member handles (`pds_handle_domain`) in runtime inventory, or clear it (the engine behind `scn-config`'s Cluster Settings, Domains row) |
 | `set-tls.yml`         | CT 100 (local) | Record the proxy's TLS mode, and the acme contact email, in runtime inventory (the engine behind `scn-config`'s Set TLS) |
@@ -466,7 +467,7 @@ the API token and has no SSH path to the host, so anything needing host accounts
 | [`litellm`](roles/litellm.md)              | `litellm`  | LiteLLM proxy (venv) — OpenAI-compatible gateway, Postgres-backed; + an always-on CPU floor embedder (`nomic-embed-text`) |
 | [`open-webui`](roles/open-webui.md)        | `open-webui` | OpenWebUI chat UI (uv-managed Python 3.12 venv) — Postgres-backed, fronted by Caddy, talks to litellm for chat + RAG embeddings |
 | [`happyview`](roles/happyview.md)          | `happyview` | HappyView AT Protocol AppView platform (Rust binary, built from source) — Postgres-backed, fronted by Caddy |
-| [`scn_notes`](roles/scn_notes.md) | `sync-relay` | The SCN Notes service, `scn-notes` (Rust binary, built from source) — the server end of the automerge-repo WebSocket protocol behind shared notes, and its MCP service, Postgres-backed. Verifies Corliss-issued access tokens. Routed at `notes.<domain>` from `0.7.0`, and at `sync.<domain>` and `mcp.<domain>` until they retire. See [ADR-0007](decisions/0007-sync-relay-and-space-membership.md) |
+| [`scn_notes`](roles/scn_notes.md) | `scn-notes` | The SCN Notes service, `scn-notes` (Rust binary, built from source) — the server end of the automerge-repo WebSocket protocol behind shared notes, and its MCP service, Postgres-backed. Verifies Corliss-issued access tokens. Routed at `notes.<domain>` from `0.7.0`, and at `sync.<domain>` and `mcp.<domain>` until they retire. See [ADR-0007](decisions/0007-sync-relay-and-space-membership.md) |
 | [`pds`](roles/pds.md)                      | `pds`      | In-house AT Protocol PDS (atproto-pds, Rust binary, built from source at a pinned revision): hosts the cluster's atproto accounts. SQLite on disk, no Postgres. Fronted by Caddy at `pds.<domain>` |
 | [`scn_chat`](roles/scn_chat.md)            | `scn-chat` | SCN AI-assistant chat app (Node 24, built from source at a pinned tag): atproto OAuth sign-in against each member's own PDS. SQLite on disk, **not backed up**. Fronted by Caddy at `chat.<domain>` |
 | [`beszel`](roles/beszel.md)                | `beszel`   | Beszel monitoring hub (Go binary from a checksummed release): per-machine metrics and pending OS updates. SQLite on disk, **not backed up**: Ansible re-asserts the hub key, logins and agent token every run, so a rebuild loses only metrics history. Fronted by Caddy at `monitor.<domain>` |

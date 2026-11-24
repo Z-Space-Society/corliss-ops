@@ -222,7 +222,7 @@ corliss_repo_url: https://github.com/Z-Space-Society/Corliss.git
 #
 # Two consequences worth knowing before pinning it:
 #
-# - **This role now fails if sync-relay, redis, object-store or proxy has no
+# - **This role now fails if scn-notes, redis, object-store or proxy has no
 #   CTID assigned.** The four URLs derive from hostvars unguarded, the same
 #   idiom and reasoning as corliss_membership_registry_url. `scn-config`
 #   is the fix. It is an inventory dependency, not an ordering
@@ -730,7 +730,7 @@ registry_client_key: ""
 # open-webui records: a role default isn't a reliable host fact from another
 # play. Keep in sync with scn_notes_port.
 corliss_scn_notes_port: 7030
-corliss_scn_notes_url: "http://{{ hostvars['sync-relay'].ansible_host }}:{{ corliss_scn_notes_port }}"
+corliss_scn_notes_url: "http://{{ hostvars['scn-notes'].ansible_host }}:{{ corliss_scn_notes_port }}"
 
 # --- Public OAuth clients and the Notes page (v1.4.0) --------------------------
 # The resources Corliss may issue access tokens for. Each `url` is the `aud` a
