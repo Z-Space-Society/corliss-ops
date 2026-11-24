@@ -24,7 +24,7 @@ that makes claims nothing checks.
 
 ## 2. Role
 
-Create `ansible/roles/<role>/`. Copy [`sync_relay`](roles/sync_relay.md) for a
+Create `ansible/roles/<role>/`. Copy [`scn_notes`](roles/scn_notes.md) for a
 source build, [`litellm`](roles/litellm.md) for a pip install, or
 [`redis`](roles/redis.md) for a Debian package.
 
@@ -34,7 +34,7 @@ source build, [`litellm`](roles/litellm.md) for a pip install, or
   apt version fails a replay the day Debian ships a point release.
 - **Build only when something moved.** For a source build, rebuild when the
   pinned checkout changes or the installed binary is missing, and remove the
-  build tree after installing (copy `sync_relay`'s clone, `stat` and `when`).
+  build tree after installing (copy `scn_notes`'s clone, `stat` and `when`).
   A replay should cost seconds, not a compile.
 - **Run on generated secrets alone.** Secrets the play can mint are
   `lookup('ansible.builtin.password', ...)` recipes in
@@ -53,11 +53,11 @@ source build, [`litellm`](roles/litellm.md) for a pip install, or
   `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true` and
   `PrivateTmp=true`. The daemon's own data directory is its only
   `ReadWritePaths`, and a service that keeps its state elsewhere gets none (see
-  `scn-notes.service.j2` in the sync_relay role). Set `Restart=` with a comment on why that
+  `scn-notes.service.j2` in the scn_notes role). Set `Restart=` with a comment on why that
   value, since the right one depends on how the daemon exits.
 - **End with a smoke test** that proves the feature, not just the unit: a
   `wait_for` on the port, then a `uri` against a real endpoint (see the end of
-  `sync_relay`'s tasks). systemd reporting "active" is not proof.
+  `scn_notes`'s tasks). systemd reporting "active" is not proof.
 
 ## 3. Manifest
 
@@ -109,7 +109,7 @@ after the services it depends on:
 
 If the service needs a public route, add it to the
 [`proxy`](roles/proxy.md) role's Caddyfile. If it should stay internal, say so
-in its role doc, as `sync_relay` does.
+in its role doc, as `scn_notes` does.
 
 ## 5. Health check in Corliss
 

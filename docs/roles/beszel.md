@@ -107,7 +107,7 @@ In [`defaults/main.yml`](../../ansible/roles/beszel/defaults/main.yml):
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
 | `beszel_hub_url` / `beszel_hub_sha256` | the v`beszel_version` tarball | Bump the checksum with the version, taken from the release's `beszel_<version>_checksums.txt`. |
-| `beszel_bind` | `0.0.0.0` | Listen address. The wildcard is mandatory, for the same cold-boot reason as `sync_relay_host`. |
+| `beszel_bind` | `0.0.0.0` | Listen address. The wildcard is mandatory, for the same cold-boot reason as `scn_notes_host`. |
 | `beszel_data_dir` | `/var/lib/beszel` | PocketBase's `--dir`: the database and the hub key. |
 | `beszel_app_url` | `https://{{ beszel_host }}` | Rendered as `APP_URL`. |
 | `beszel_admin_email` | `admin@{{ cluster_domain }}` | The password login, kept beside Corliss sign-in until it is turned off. Receives no mail. |

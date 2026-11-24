@@ -24,9 +24,9 @@
   ansible.builtin.command:
     cmd: >-
       su - postgres -c
-      "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname = '{{ sync_relay_db_user }}'\""
+      "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname = '{{ scn_notes_db_user }}'\""
   delegate_to: postgres
-  register: sync_relay_role_check
+  register: scn_notes_role_check
   changed_when: false
 
 - name: Create the relay's Postgres role with a generated password
@@ -34,11 +34,11 @@
     cmd: >-
       su -m postgres -c
       "psql -v ON_ERROR_STOP=1
-      -c \"CREATE ROLE {{ sync_relay_db_user }} LOGIN PASSWORD '\$SCN_NOTES_DB_PW'\""
+      -c \"CREATE ROLE {{ scn_notes_db_user }} LOGIN PASSWORD '\$SCN_NOTES_DB_PW'\""
   environment:
-    SCN_NOTES_DB_PW: "{{ sync_relay_db_password }}"
+    SCN_NOTES_DB_PW: "{{ scn_notes_db_password }}"
   delegate_to: postgres
-  when: sync_relay_role_check.stdout | trim != "1"
+  when: scn_notes_role_check.stdout | trim != "1"
   no_log: true
 
 - name: Ensure the relay's role password matches the generated secret
@@ -47,11 +47,11 @@
     cmd: >-
       su -m postgres -c
       "psql -v ON_ERROR_STOP=1
-      -c \"ALTER ROLE {{ sync_relay_db_user }} LOGIN PASSWORD '\$SCN_NOTES_DB_PW'\""
+      -c \"ALTER ROLE {{ scn_notes_db_user }} LOGIN PASSWORD '\$SCN_NOTES_DB_PW'\""
   environment:
-    SCN_NOTES_DB_PW: "{{ sync_relay_db_password }}"
+    SCN_NOTES_DB_PW: "{{ scn_notes_db_password }}"
   delegate_to: postgres
-  when: sync_relay_role_check.stdout | trim == "1"
+  when: scn_notes_role_check.stdout | trim == "1"
   no_log: true
   changed_when: false
 
@@ -59,9 +59,9 @@
   ansible.builtin.command:
     cmd: >-
       su - postgres -c
-      "psql -tAc \"SELECT 1 FROM pg_database WHERE datname = '{{ sync_relay_db_name }}'\""
+      "psql -tAc \"SELECT 1 FROM pg_database WHERE datname = '{{ scn_notes_db_name }}'\""
   delegate_to: postgres
-  register: sync_relay_db_check
+  register: scn_notes_db_check
   changed_when: false
 
 - name: Create the relay's database owned by its role
@@ -70,10 +70,10 @@
   ansible.builtin.command:
     cmd: >-
       su - postgres -c
-      "psql -v ON_ERROR_STOP=1 -c \"CREATE DATABASE {{ sync_relay_db_name }}
-      OWNER {{ sync_relay_db_user }}\""
+      "psql -v ON_ERROR_STOP=1 -c \"CREATE DATABASE {{ scn_notes_db_name }}
+      OWNER {{ scn_notes_db_user }}\""
   delegate_to: postgres
-  when: sync_relay_db_check.stdout | trim != "1"
+  when: scn_notes_db_check.stdout | trim != "1"
 
 # --- Service account + directories ------------------------------------------------
 
@@ -83,22 +83,22 @@
   # few minutes, not a cold 15-30. The running 0.6.0 keeps its open binary
   # until it is stopped below. Idempotent: does nothing once moved.
   ansible.builtin.command:
-    cmd: mv /opt/{{ sync_relay_old_name }} {{ sync_relay_home }}
-    creates: "{{ sync_relay_home }}"
-    removes: /opt/{{ sync_relay_old_name }}
+    cmd: mv /opt/{{ scn_notes_old_name }} {{ scn_notes_home }}
+    creates: "{{ scn_notes_home }}"
+    removes: /opt/{{ scn_notes_old_name }}
 
 - name: Create the scn-notes system group
   ansible.builtin.group:
-    name: "{{ sync_relay_group }}"
+    name: "{{ scn_notes_group }}"
     system: true
 
 - name: Create the scn-notes system user
   ansible.builtin.user:
-    name: "{{ sync_relay_user }}"
-    group: "{{ sync_relay_group }}"
+    name: "{{ scn_notes_user }}"
+    group: "{{ scn_notes_group }}"
     system: true
     shell: /usr/sbin/nologin
-    home: "{{ sync_relay_home }}"
+    home: "{{ scn_notes_home }}"
     create_home: false
 
 - name: Create the scn-notes home and config directories
@@ -106,14 +106,14 @@
     path: "{{ item.path }}"
     state: directory
     owner: "{{ item.owner }}"
-    group: "{{ sync_relay_group }}"
+    group: "{{ scn_notes_group }}"
     mode: "{{ item.mode }}"
   loop:
     # home/bin: the installed binary (root-owned, world-readable).
     # config dir: root-owned, holds the 0600 env the daemon reads via EnvironmentFile.
-    - { path: "{{ sync_relay_home }}", owner: root, mode: "0755" }
-    - { path: "{{ sync_relay_home }}/bin", owner: root, mode: "0755" }
-    - { path: "{{ sync_relay_config_dir }}", owner: root, mode: "0750" }
+    - { path: "{{ scn_notes_home }}", owner: root, mode: "0755" }
+    - { path: "{{ scn_notes_home }}/bin", owner: root, mode: "0755" }
+    - { path: "{{ scn_notes_config_dir }}", owner: root, mode: "0750" }
 
 # --- Build dependencies -----------------------------------------------------------
 
@@ -133,7 +133,7 @@
 
 - name: Check whether the Rust toolchain is installed
   ansible.builtin.command: rustc --version
-  register: sync_relay_rust_installed
+  register: scn_notes_rust_installed
   changed_when: false
   failed_when: false
   environment:
@@ -146,15 +146,15 @@
   ansible.builtin.shell:
     cmd: >-
       curl -fsSL https://sh.rustup.rs |
-      sh -s -- -y --profile minimal --default-toolchain {{ sync_relay_rust_channel }}
+      sh -s -- -y --profile minimal --default-toolchain {{ scn_notes_rust_channel }}
     creates: /root/.cargo/bin/rustc
-  when: sync_relay_rust_installed.rc != 0
+  when: scn_notes_rust_installed.rc != 0
 
 # --- Clone + build ----------------------------------------------------------------
 
 - name: Check the checked-out scn-notes version
-  ansible.builtin.command: git -C "{{ sync_relay_src }}" describe --tags --exact-match
-  register: sync_relay_src_version
+  ansible.builtin.command: git -C "{{ scn_notes_src }}" describe --tags --exact-match
+  register: scn_notes_src_version
   changed_when: false
   failed_when: false
 
@@ -164,22 +164,22 @@
   # match", which reads like a bad version pin. `git ls-remote --tags origin`
   # distinguishes the two; listing tags in a local clone does not.
   ansible.builtin.git:
-    repo: "{{ sync_relay_repo_url }}"
-    dest: "{{ sync_relay_src }}"
-    version: "v{{ sync_relay_version }}"
+    repo: "{{ scn_notes_repo_url }}"
+    dest: "{{ scn_notes_src }}"
+    version: "v{{ scn_notes_version }}"
     depth: 1
     force: true
-  register: sync_relay_clone
-  when: sync_relay_src_version.stdout | trim != "v" ~ sync_relay_version
+  register: scn_notes_clone
+  when: scn_notes_src_version.stdout | trim != "v" ~ scn_notes_version
 
 - name: Check whether the installed binary exists
   ansible.builtin.stat:
-    path: "{{ sync_relay_bin }}"
-  register: sync_relay_bin_stat
+    path: "{{ scn_notes_bin }}"
+  register: scn_notes_bin_stat
 
-- name: Check the free disk space under {{ sync_relay_home }}
-  ansible.builtin.command: df --output=avail -BG "{{ sync_relay_home }}"
-  register: sync_relay_disk
+- name: Check the free disk space under {{ scn_notes_home }}
+  ansible.builtin.command: df --output=avail -BG "{{ scn_notes_home }}"
+  register: scn_notes_disk
   changed_when: false
 
 - name: Clear the Cargo build tree when the CT is short of disk
@@ -188,11 +188,11 @@
   # that one build is a cold one again. The free space is read before building,
   # so a build never starts on a nearly full disk.
   ansible.builtin.file:
-    path: "{{ sync_relay_src }}/target"
+    path: "{{ scn_notes_src }}/target"
     state: absent
   when:
-    - (sync_relay_clone is changed) or (not sync_relay_bin_stat.stat.exists)
-    - (sync_relay_disk.stdout_lines[-1] | trim | regex_replace('G$', '') | int) < sync_relay_min_free_gb
+    - (scn_notes_clone is changed) or (not scn_notes_bin_stat.stat.exists)
+    - (scn_notes_disk.stdout_lines[-1] | trim | regex_replace('G$', '') | int) < scn_notes_min_free_gb
 
 - name: Build scn-notes from source (cargo build --release)
   # Build when the clone just moved to a new version, or the binary isn't installed
@@ -203,22 +203,22 @@
   # version it holds.
   ansible.builtin.command:
     cmd: /root/.cargo/bin/cargo build --release
-    chdir: "{{ sync_relay_src }}"
+    chdir: "{{ scn_notes_src }}"
   environment:
     PATH: "/usr/local/bin:/root/.cargo/bin:{{ ansible_env.PATH }}"
     HOME: /root
-  when: (sync_relay_clone is changed) or (not sync_relay_bin_stat.stat.exists)
+  when: (scn_notes_clone is changed) or (not scn_notes_bin_stat.stat.exists)
   notify: restart scn-notes
 
-- name: Install the built binary to {{ sync_relay_home }}/bin
+- name: Install the built binary to {{ scn_notes_home }}/bin
   ansible.builtin.copy:
-    src: "{{ sync_relay_src }}/target/release/scn-notes"
-    dest: "{{ sync_relay_bin }}"
+    src: "{{ scn_notes_src }}/target/release/scn-notes"
+    dest: "{{ scn_notes_bin }}"
     remote_src: true
     owner: root
     group: root
     mode: "0755"
-  when: (sync_relay_clone is changed) or (not sync_relay_bin_stat.stat.exists)
+  when: (scn_notes_clone is changed) or (not scn_notes_bin_stat.stat.exists)
   notify: restart scn-notes
 
 # --- Secret env + unit ------------------------------------------------------------
@@ -226,7 +226,7 @@
 - name: Render the scn-notes environment file
   ansible.builtin.template:
     src: scn-notes.env.j2
-    dest: "{{ sync_relay_env_file }}"
+    dest: "{{ scn_notes_env_file }}"
     owner: root
     group: root
     mode: "0600"
@@ -236,7 +236,7 @@
 - name: Install the scn-notes systemd unit
   ansible.builtin.template:
     src: scn-notes.service.j2
-    dest: "/etc/systemd/system/{{ sync_relay_unit }}.service"
+    dest: "/etc/systemd/system/{{ scn_notes_unit }}.service"
     owner: root
     group: root
     mode: "0644"
@@ -250,24 +250,24 @@
 
 - name: Check for the pre-v0.7.0 unit
   ansible.builtin.stat:
-    path: "/etc/systemd/system/{{ sync_relay_old_name }}.service"
-  register: sync_relay_old_unit
+    path: "/etc/systemd/system/{{ scn_notes_old_name }}.service"
+  register: scn_notes_old_unit
 
 - name: Stop and disable the pre-v0.7.0 unit
   ansible.builtin.systemd:
-    name: "{{ sync_relay_old_name }}"
+    name: "{{ scn_notes_old_name }}"
     state: stopped
     enabled: false
-  when: sync_relay_old_unit.stat.exists
+  when: scn_notes_old_unit.stat.exists
 
 - name: Remove the pre-v0.7.0 unit file
   ansible.builtin.file:
-    path: "/etc/systemd/system/{{ sync_relay_old_name }}.service"
+    path: "/etc/systemd/system/{{ scn_notes_old_name }}.service"
     state: absent
 
 - name: Ensure scn-notes is started and enabled
   ansible.builtin.systemd:
-    name: "{{ sync_relay_unit }}"
+    name: "{{ scn_notes_unit }}"
     state: started
     enabled: true
     daemon_reload: true
@@ -278,18 +278,18 @@
 - name: Wait for scn-notes to accept connections
   ansible.builtin.wait_for:
     host: 127.0.0.1
-    port: "{{ sync_relay_port }}"
+    port: "{{ scn_notes_port }}"
     timeout: 60
 
 - name: Verify the scn-notes health endpoint responds
   # /health reports liveness and the auth mode without touching Postgres, so this
   # proves the process is up and serving — the storage path is proved by the
-  # protocol test in docs/roles/scn_sync_relay.md, not from here.
+  # protocol test in docs/roles/scn_notes.md, not from here.
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ sync_relay_port }}/health"
+    url: "http://127.0.0.1:{{ scn_notes_port }}/health"
     return_content: true
-  register: sync_relay_health
-  until: sync_relay_health is succeeded
+  register: scn_notes_health
+  until: scn_notes_health is succeeded
   retries: 10
   delay: 3
 
@@ -299,26 +299,26 @@
   # not a warning.
   ansible.builtin.assert:
     that:
-      - "'auth=corliss' in sync_relay_health.content"
+      - "'auth=corliss' in scn_notes_health.content"
     fail_msg: >-
-      scn-notes answered "{{ sync_relay_health.content | trim }}", not
-      auth=corliss. Check sync_relay_require_auth and the SCN_NOTES_OIDC_*
-      settings in {{ sync_relay_env_file }}.
-  when: sync_relay_require_auth | bool
+      scn-notes answered "{{ scn_notes_health.content | trim }}", not
+      auth=corliss. Check scn_notes_require_auth and the SCN_NOTES_OIDC_*
+      settings in {{ scn_notes_env_file }}.
+  when: scn_notes_require_auth | bool
 
 - name: Wait for the MCP listener to accept connections
   ansible.builtin.wait_for:
     host: 127.0.0.1
-    port: "{{ sync_relay_mcp_port }}"
+    port: "{{ scn_notes_mcp_port }}"
     timeout: 30
 
 - name: Verify the notes. listener answers
   # The third listener binds separately and refuses to start on a public URL
   # with a path or a trailing slash, so it can fail on its own.
   ansible.builtin.uri:
-    url: "http://127.0.0.1:{{ sync_relay_public_port }}/health"
-  register: sync_relay_public_health
-  until: sync_relay_public_health is succeeded
+    url: "http://127.0.0.1:{{ scn_notes_public_port }}/health"
+  register: scn_notes_public_health
+  until: scn_notes_public_health is succeeded
   retries: 10
   delay: 3
 
@@ -329,17 +329,17 @@
 
 - name: Remove the pre-v0.7.0 config directory
   ansible.builtin.file:
-    path: "/etc/{{ sync_relay_old_name }}"
+    path: "/etc/{{ scn_notes_old_name }}"
     state: absent
 
 - name: Remove the pre-v0.7.0 system user
   ansible.builtin.user:
-    name: "{{ sync_relay_old_name }}"
+    name: "{{ scn_notes_old_name }}"
     state: absent
 
 - name: Remove the pre-v0.7.0 system group
   ansible.builtin.group:
-    name: "{{ sync_relay_old_name }}"
+    name: "{{ scn_notes_old_name }}"
     state: absent
 
 # --- Manifest (docs/roles/manifest.md) ----------------------------------------
@@ -348,4 +348,4 @@
   ansible.builtin.include_role:
     name: manifest
   vars:
-    manifest_version: "{{ sync_relay_version }}"
+    manifest_version: "{{ scn_notes_version }}"

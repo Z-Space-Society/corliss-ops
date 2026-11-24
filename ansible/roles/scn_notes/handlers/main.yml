@@ -5,5 +5,5 @@
 
 - name: restart scn-notes
   ansible.builtin.service:
-    name: "{{ sync_relay_unit }}"
+    name: "{{ scn_notes_unit }}"
     state: restarted

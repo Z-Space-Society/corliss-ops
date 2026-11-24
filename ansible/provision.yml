@@ -270,7 +270,7 @@
   hosts: sync-relay
   gather_facts: true
   roles:
-    - sync_relay
+    - scn_notes
 
 # pds runs AFTER nothing in particular: atproto-pds is SQLite-only, so unlike
 # happyview/sync-relay there is no delegated postgres role to provision first.

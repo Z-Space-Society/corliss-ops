@@ -250,10 +250,15 @@ scn_chat_secret_key: "{{ lookup('ansible.builtin.pipe', 'test -f ' ~ _zai_secret
 # the pairs above. Hex, so it needs no percent-encoding inside the
 # SCN_NOTES_DATABASE_URL the role builds from it.
 #
-# Named sync_relay_db_password to match the role default that consumes it
+# Named scn_notes_db_password to match the role default that consumes it
 # directly — unlike the redis/openwebui pairs, nothing wraps this one under a
 # second name, because only the one role reads it.
-sync_relay_db_password: "{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/sync_relay_db_password chars=digits,abcdef length=48') }}"
+#
+# The file it reads keeps its pre-rename name, sync_relay_db_password, as does
+# the service token's below. The lookup path is the secret's identity: a new
+# path mints a new value, and the relay would lose its database password
+# (corliss-ops#107).
+scn_notes_db_password: "{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/sync_relay_db_password chars=digits,abcdef length=48') }}"
 
 # The credential Corliss presents on the relay's /internal/vaults, to list a
 # member's vaults and create one. Here rather than in either role because both
@@ -261,7 +266,7 @@ sync_relay_db_password: "{{ lookup('ansible.builtin.password', _zai_secrets_dir 
 # SCN_NOTES_SERVICE_TOKEN, and one value resolved on the control node is
 # what keeps them from disagreeing. Not DR-critical: losing it costs a
 # regenerate and a replay of both roles, and no stored data depends on it.
-sync_relay_service_token: "{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/sync_relay_service_token chars=ascii_letters,digits length=48') }}"
+scn_notes_service_token: "{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/sync_relay_service_token chars=ascii_letters,digits length=48') }}"
 
 # The relay's two public hostnames: the sync websocket and the MCP service.
 # Defined once and read by three roles. The proxy routes them, Corliss issues
@@ -270,13 +275,13 @@ sync_relay_service_token: "{{ lookup('ansible.builtin.password', _zai_secrets_di
 # MCP_AUDIENCE). Spelled in three places, the audiences would drift and every
 # token would fail with a bare 401. MCP_AUDIENCE is also the only Host the MCP
 # service answers, so it must be lowercase with no trailing slash.
-sync_relay_sync_host: "sync.{{ cluster_domain }}"
-sync_relay_mcp_host: "mcp.{{ cluster_domain }}"
+scn_notes_sync_host: "sync.{{ cluster_domain }}"
+scn_notes_mcp_host: "mcp.{{ cluster_domain }}"
 
 # The one host members' clients use from v0.7.0: the plugin at /v1/, MCP at
 # /mcp (scn-obsidian#27). Read by the same three roles as the two above, which
 # keep answering until they retire (scn-notes#19).
-sync_relay_notes_host: "notes.{{ cluster_domain }}"
+scn_notes_notes_host: "notes.{{ cluster_domain }}"
 
 # Beszel (zai-ops#3): the monitoring hub on the beszel CT, and an agent on the
 # control node and every service container (the monitor_agent role). The
