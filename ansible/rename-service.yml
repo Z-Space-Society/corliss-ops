@@ -1,0 +1,241 @@
+---
+# Move a service recorded under one inventory name to another, after the
+# blueprint (inventory/hosts.yml) renames it.
+#
+#   ansible-playbook rename-service.yml -e old=sync-relay -e new=scn-notes
+#
+# The inventory name is more than a label. It keys the service's CTID in the
+# git-ignored inventory/local.yml, its Beszel system, and its manifest and
+# deploy records in Garage. This moves those, and the next
+# `provision.yml --limit <new>` does the rest with the tasks it always runs:
+# the create task renames the CT on Proxmox, and the monitor agent enrolls
+# under the new name.
+#
+# Run it once per cluster, after checking out the release that renames the
+# service and before any provision. Until then provision.yml refuses to start,
+# because the old name has a CTID and is not in the blueprint.
+#
+# Safe to re-run. Once local.yml has nothing under the old name it says so and
+# changes nothing, which is also all it does on a cluster that never assigned
+# the service. Garage is moved before local.yml is written, so a run that
+# fails partway is finished by running it again.
+#
+# The Beszel system is deleted, not renamed: Beszel knows an agent by a
+# fingerprint derived from the inventory name, so the new name enrolls as a new
+# system. The old agent is stopped first so it cannot re-enroll under the old
+# name in between. The service's metrics history starts over, and its alerts
+# come back with the next monitor-agent.yml run that includes the hub.
+#
+# Every play is any_errors_fatal: a failure in one must stop the plays after
+# it, which run on other hosts and would otherwise carry on.
+
+- name: Check the rename and find what to move
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    runtime_inventory: "{{ playbook_dir }}/inventory/local.yml"
+  tasks:
+    - name: Require both names
+      ansible.builtin.assert:
+        that:
+          - old | default('') | length > 0
+          - new | default('') | length > 0
+          - old != new
+        fail_msg: "Pass -e old=<name in local.yml> -e new=<name in the blueprint>."
+
+    # Read as a file: groups[] also holds every name local.yml records, so it
+    # cannot tell the blueprint's services from a stale one.
+    - name: Read the blueprint's services
+      ansible.builtin.set_fact:
+        blueprint_services: >-
+          {{ (lookup('file', playbook_dir ~ '/inventory/hosts.yml') | from_yaml)
+             .all.children.service_containers.hosts | list }}
+
+    - name: Require the new name in the blueprint and the old one out of it
+      ansible.builtin.assert:
+        that:
+          - new in blueprint_services
+          - old not in blueprint_services
+        fail_msg: >-
+          '{{ new }}' must be a service in inventory/hosts.yml and '{{ old }}'
+          must not be. Services: {{ blueprint_services | sort | join(', ') }}
+
+    # errors='ignore' → empty string when the file doesn't exist yet; 'or {}'
+    # turns that (and an empty file) into an empty mapping.
+    - name: Load the runtime inventory
+      ansible.builtin.set_fact:
+        runtime_data: "{{ (lookup('file', runtime_inventory, errors='ignore') | from_yaml) or {} }}"
+
+    - name: Find what is recorded under each name
+      ansible.builtin.set_fact:
+        recorded: "{{ runtime_data.get('all', {}).get('children', {}).get('service_containers', {}).get('hosts', {}) or {} }}"
+
+    - name: Refuse when both names are recorded
+      ansible.builtin.assert:
+        that: not (old in recorded and new in recorded)
+        fail_msg: >-
+          inventory/local.yml records both '{{ old }}' ({{ recorded[old] }}) and
+          '{{ new }}' ({{ recorded[new] }}). Which one holds the data is a
+          judgement this playbook will not make.
+
+    - name: Note whether there is anything to move
+      ansible.builtin.set_fact:
+        rename_needed: "{{ old in recorded }}"
+
+    - name: Report a rename already done, or never needed
+      ansible.builtin.debug:
+        msg: "Nothing is recorded under '{{ old }}' in inventory/local.yml; nothing to move."
+      when: not rename_needed
+
+# Matches no host once local.yml no longer records the old name, so a re-run
+# skips it.
+- name: Stop the old name's monitoring agent
+  hosts: "{{ old }}"
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Stop beszel-agent
+      ansible.builtin.systemd_service:
+        name: beszel-agent
+        state: stopped
+      register: rename_agent_stop
+      # A CT the agent never reached (no hub when it was provisioned) has no
+      # unit, and nothing to stop.
+      failed_when: >-
+        rename_agent_stop is failed
+        and 'Could not find' not in (rename_agent_stop.msg | default(''))
+      when: hostvars['beszel'].ctid is defined
+
+# On the hub CT against 127.0.0.1, where Ansible uses the superuser, as the
+# monitor_agent role's smoke test does.
+- name: Delete the old name's Beszel system
+  hosts: beszel
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Delete the system record
+      when:
+        - ctid is defined
+        - hostvars['localhost'].rename_needed | bool
+      block:
+        - name: Sign in to the hub as the superuser
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ beszel_port }}/api/collections/_superusers/auth-with-password"
+            method: POST
+            body_format: json
+            body:
+              identity: "{{ beszel_superuser_email }}"
+              password: "{{ beszel_superuser_password }}"
+          register: rename_hub_auth
+          no_log: true
+
+        - name: Find the old name's system
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ beszel_port }}/api/collections/systems/records?filter={{ rename_filter | urlencode }}"
+            headers:
+              Authorization: "{{ rename_hub_auth.json.token }}"
+          vars:
+            rename_filter: "name='{{ old }}'"
+          register: rename_old_system
+
+        - name: Delete it
+          ansible.builtin.uri:
+            url: "http://127.0.0.1:{{ beszel_port }}/api/collections/systems/records/{{ item.id }}"
+            method: DELETE
+            headers:
+              Authorization: "{{ rename_hub_auth.json.token }}"
+            status_code: 204
+          loop: "{{ rename_old_system.json['items'] }}"
+          loop_control:
+            label: "{{ item.name }} ({{ item.id }})"
+          changed_when: true
+
+- name: Move the old name's records and its CTID
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
+  vars:
+    runtime_inventory: "{{ playbook_dir }}/inventory/local.yml"
+    deploys_old: "deploys/{{ old }}/"
+    deploys_new: "deploys/{{ new }}/"
+  tasks:
+    - name: Move the records and the CTID
+      when: rename_needed | bool
+      block:
+        - name: Load the manifest role's defaults (Garage endpoint and region)
+          ansible.builtin.include_vars:
+            file: "{{ playbook_dir }}/roles/manifest/defaults/main.yml"
+            name: defaults_manifest
+
+        # Corliss reads both by inventory name: <host>.json for /systems/, and
+        # deploys/<host>/ for the host's deploy history, which keeps it on one
+        # page. The record bodies still name the old service, which is true of
+        # when they ran. The new manifest is written by the next provision.
+        - name: Move the deploy records and drop the old manifest
+          when: hostvars['object-store'].ctid is defined
+          module_defaults:
+            amazon.aws.s3_object:
+              bucket: "{{ manifest_bucket }}"
+              endpoint_url: "{{ defaults_manifest.manifest_endpoint_url }}"
+              region: "{{ defaults_manifest.manifest_region }}"
+              access_key: "{{ manifest_writer_access_key }}"
+              secret_key: "{{ manifest_writer_secret_key }}"
+          block:
+            - name: List the old name's deploy records
+              amazon.aws.s3_object:
+                mode: list
+                prefix: "{{ deploys_old }}"
+                max_keys: 10000
+              register: rename_deploys
+
+            # Every copy before any delete, so a failure loses nothing.
+            - name: Copy each record under the new name
+              amazon.aws.s3_object:
+                mode: copy
+                object: "{{ deploys_new ~ item[deploys_old | length:] }}"
+                copy_src:
+                  bucket: "{{ manifest_bucket }}"
+                  object: "{{ item }}"
+                # Garage has no ACLs and no SSE-S3; both default on in this module.
+                permission: []
+                encrypt: false
+              loop: "{{ rename_deploys.s3_keys }}"
+
+            - name: Delete the originals
+              amazon.aws.s3_object:
+                mode: delobj
+                object: "{{ item }}"
+              loop: "{{ rename_deploys.s3_keys }}"
+
+            - name: Delete the old name's manifest
+              amazon.aws.s3_object:
+                mode: delobj
+                object: "{{ old }}.json"
+
+        # Replaced level by level rather than with a recursive combine, which
+        # would merge the old key back in. Every sibling (the domain, the other
+        # assignments, the inference-node roster) is carried over as it was.
+        - name: Move the CTID to the new name
+          ansible.builtin.set_fact:
+            runtime_data: "{{ runtime_data | combine({'all': _all}) }}"
+          vars:
+            _hosts: "{{ recorded | dict2items | rejectattr('key', 'equalto', old) | items2dict | combine({new: recorded[old]}) }}"
+            _svc: "{{ runtime_data.all.children.service_containers | combine({'hosts': _hosts}) }}"
+            _children: "{{ runtime_data.all.children | combine({'service_containers': _svc}) }}"
+            _all: "{{ runtime_data.all | combine({'children': _children}) }}"
+
+        - name: Write the runtime inventory
+          ansible.builtin.copy:
+            dest: "{{ runtime_inventory }}"
+            content: "{{ runtime_data | to_nice_yaml(indent=2) }}"
+            mode: "0644"
+
+        - name: Report
+          ansible.builtin.debug:
+            msg: >-
+              {{ old }} is now {{ new }} (CTID {{ recorded[old].ctid | default('-') }}).
+              Next: ansible-playbook provision.yml --limit {{ new }}, then
+              ansible-playbook monitor-agent.yml --limit beszel for its alerts.

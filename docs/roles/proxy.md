@@ -111,8 +111,8 @@ The committed routes, and what each publishes of its upstream:
 | `view.` | `happyview` | everything |
 | `chat.` | `scn-chat` | everything |
 | `pds.` | `pds` | everything, `/admin` and `com.atproto.admin.*` included (behind basic auth; see [zai-ops#44](https://github.com/Z-Space-Society/zai-ops/issues/44)) |
-| `sync.` | `sync-relay` | everything but `/internal/*`, answered 404 here |
-| `mcp.` | `sync-relay` | everything |
+| `sync.` | `scn-notes` | everything but `/internal/*`, answered 404 here |
+| `mcp.` | `scn-notes` | everything |
 | `monitor.` | `beszel` | everything but `/_/*`, `/api/collections/_superusers/*`, `/api/collections/pbc_3142635823/*` (the same collection by id) and `/api/beszel/create-user`, answered 404 here |
 | any other name | `pds` | the catch-all for member handles; a certificate only for names the PDS vouches for |
 
