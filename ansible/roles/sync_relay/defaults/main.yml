@@ -100,7 +100,16 @@
 # jsonwebtoken 12). No new settings, no schema change, no proxy change: the
 # proxy passes the preflight and the headers through. Rolling back to 0.8.0 is
 # safe.
-sync_relay_version: "0.8.1"
+#
+# v0.9.0 stores attachment bytes in the relay's Postgres and serves them on the
+# notes. host (scn-notes spec 0002), behind SCN_NOTES_ATTACHMENTS_ENABLED,
+# which this role renders off (sync_relay_attachments_enabled below). At
+# startup the binary adds the attachments and attachment_chunks tables
+# whether or not the flag is on; off, the routes answer 404 and nothing is
+# written to them. /v1/ CORS also answers any https origin by name, beside
+# loopback (scn-notes#33). No proxy change. Rolling back to 0.8.1 is safe: it
+# ignores the new tables.
+sync_relay_version: "0.9.0"
 
 # Below this much free disk under sync_relay_home, target/ is cleared before a
 # build, which is then a cold one. The CT has 16 GB; a full build tree is
@@ -169,6 +178,14 @@ sync_relay_mcp_audience: "https://{{ sync_relay_mcp_host }}"
 # plugin's audience there, and with /mcp after it, an MCP client's. Corliss's
 # OIDC_RESOURCES builds both from the same group_vars host.
 sync_relay_public_url: "https://{{ sync_relay_notes_host }}"
+
+# Attachments (v0.9.0). Off until the relay removes bytes no note names
+# (scn-notes#11), so nothing is stored that nothing cleans up. The two limits
+# are the binary's own defaults, written out so a cluster sees what it would
+# get: 50 MiB a file (0 refuses every upload), 2 GiB a workspace.
+sync_relay_attachments_enabled: false
+sync_relay_attachment_max_bytes: 52428800
+sync_relay_attachment_workspace_quota_bytes: 2147483648
 
 sync_relay_repo_url: "https://github.com/Z-Space-Society/scn-notes"
 
