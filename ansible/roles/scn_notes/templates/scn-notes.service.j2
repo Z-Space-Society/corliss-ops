@@ -5,11 +5,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User={{ sync_relay_user }}
-Group={{ sync_relay_group }}
-EnvironmentFile={{ sync_relay_env_file }}
-WorkingDirectory={{ sync_relay_home }}
-ExecStart={{ sync_relay_bin }}
+User={{ scn_notes_user }}
+Group={{ scn_notes_group }}
+EnvironmentFile={{ scn_notes_env_file }}
+WorkingDirectory={{ scn_notes_home }}
+ExecStart={{ scn_notes_bin }}
 
 # Restart=always, not on-failure: the relay exits cleanly on SIGTERM, and a
 # clean exit for any other reason (Postgres gone at startup, for instance) is

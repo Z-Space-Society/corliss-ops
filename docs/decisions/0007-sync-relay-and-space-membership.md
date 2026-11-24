@@ -6,7 +6,7 @@
 > Decision 6 (ATProto service auth) and decision 7 (reachability from a Space's
 > manifest) were not built: Phase B authenticates with Corliss access tokens
 > and authorizes from each member's own vaults, with no Space in the path. See
-> [`docs/roles/sync_relay.md`](../roles/sync_relay.md) and the public-client
+> [`docs/roles/scn_notes.md`](../roles/scn_notes.md) and the public-client
 > half of [`docs/roles/corliss.md`](../roles/corliss.md). The vault's
 > ADR-005 and ADR-006 carry the same note.
 

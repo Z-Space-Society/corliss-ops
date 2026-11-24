@@ -725,12 +725,12 @@ registry_client_key: ""
 # means the process is serving, not that its storage works. Since Corliss v1.2.1
 # the row no longer says so; read a green dot there with that in mind.
 #
-# The port is a LOCAL default rather than a reach into the sync_relay role's
+# The port is a LOCAL default rather than a reach into the scn_notes role's
 # vars — same convention as corliss_litellm_port above, for the reason
 # open-webui records: a role default isn't a reliable host fact from another
-# play. Keep in sync with sync_relay_port.
-corliss_sync_relay_port: 7030
-corliss_sync_relay_url: "http://{{ hostvars['sync-relay'].ansible_host }}:{{ corliss_sync_relay_port }}"
+# play. Keep in sync with scn_notes_port.
+corliss_scn_notes_port: 7030
+corliss_scn_notes_url: "http://{{ hostvars['sync-relay'].ansible_host }}:{{ corliss_scn_notes_port }}"
 
 # --- Public OAuth clients and the Notes page (v1.4.0) --------------------------
 # The resources Corliss may issue access tokens for. Each `url` is the `aud` a
@@ -742,10 +742,10 @@ corliss_oidc_resources:
   # (Corliss#45, which also is what accepts two of a kind). The sync. and mcp.
   # entries after keep issuing tokens for plugins up to 1.2.x and existing
   # Claude connectors until they retire (scn-notes#19).
-  - { url: "https://{{ sync_relay_notes_host }}", kind: sync, label: "SCN Notes" }
-  - { url: "https://{{ sync_relay_notes_host }}/mcp", kind: mcp, label: "SCN Notes over MCP" }
-  - { url: "https://{{ sync_relay_sync_host }}", kind: sync, label: "Notes sync" }
-  - { url: "https://{{ sync_relay_mcp_host }}", kind: mcp, label: "Notes over MCP" }
+  - { url: "https://{{ scn_notes_notes_host }}", kind: sync, label: "SCN Notes" }
+  - { url: "https://{{ scn_notes_notes_host }}/mcp", kind: mcp, label: "SCN Notes over MCP" }
+  - { url: "https://{{ scn_notes_sync_host }}", kind: sync, label: "Notes sync" }
+  - { url: "https://{{ scn_notes_mcp_host }}", kind: mcp, label: "Notes over MCP" }
 
 # The nav's Notes entry. On, because this release ships with the relay's Phase B
 # in the same change. Off hides the link only; the page still answers.
@@ -766,7 +766,7 @@ corliss_reconcile_interval: 1h
 # CTID on a cluster, an unguarded reach into hostvars would fail every Corliss
 # deploy there. Blank shows the row as "unknown".
 #
-# The port is a local default, the corliss_sync_relay_port convention. Keep in
+# The port is a local default, the corliss_scn_notes_port convention. Keep in
 # sync with scn_chat_port.
 corliss_chat_port: 3000
 corliss_chat_url: "{{ ('http://' ~ hostvars['scn-chat'].ansible_host ~ ':' ~ corliss_chat_port) if hostvars['scn-chat'].ctid is defined else '' }}"
@@ -782,7 +782,7 @@ corliss_chat_url: "{{ ('http://' ~ hostvars['scn-chat'].ansible_host ~ ':' ~ cor
 # "unknown". Same reasoning as the proxy role skipping the route of a service
 # with no CTID.
 #
-# The port is a local default, the corliss_sync_relay_port convention. Keep in
+# The port is a local default, the corliss_scn_notes_port convention. Keep in
 # sync with pds_port.
 corliss_pds_port: 3000
 corliss_pds_url: "{{ ('http://' ~ hostvars['pds'].ansible_host ~ ':' ~ corliss_pds_port) if hostvars['pds'].ctid is defined else '' }}"

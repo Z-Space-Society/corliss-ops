@@ -4,7 +4,7 @@
 # scn-chat is a pnpm TS monorepo built for a single node:24-slim container; we
 # reproduce that one container as a plain CT: pinned Node 24 tarball + corepack,
 # source clone at a release tag (ADR-0012), pnpm install + build,
-# sqlite on the rootfs, systemd. Same shape as the sync_relay role: a
+# sqlite on the rootfs, systemd. Same shape as the scn_notes role: a
 # source build, and a smoke test at the end that proves the feature.
 
 # --- Node.js ---------------------------------------------------------------

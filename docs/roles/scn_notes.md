@@ -1,4 +1,4 @@
-# Role: `sync_relay`
+# Role: `scn_notes`
 
 Installs [scn-notes](https://github.com/Z-Space-Society/scn-notes) (called
 scn-sync-relay before v0.7.0) **natively** as the cluster's SCN Notes service and Automerge sync server — the server end of the
@@ -6,7 +6,7 @@ scn-sync-relay before v0.7.0) **natively** as the cluster's SCN Notes service an
 `@automerge/automerge-repo` clients sync against it unmodified. Documents persist
 to [`postgres`](postgres.md).
 
-- **Source:** [`ansible/roles/sync_relay/`](../../ansible/roles/sync_relay/)
+- **Source:** [`ansible/roles/scn_notes/`](../../ansible/roles/scn_notes/)
 - **Applied by:** [`provision.yml`](../../ansible/provision.yml) (configure play, `hosts: sync-relay`, **after** the postgres play)
 - **Target:** the `sync-relay` CT (CTID 113 by convention — platform tier, 110–119), over SSH. Public through the [`proxy`](proxy.md) at `notes.<domain>`, and at `sync.<domain>` and `mcp.<domain>` until they retire
 - **Design:** [ADR-0007](../decisions/0007-sync-relay-and-space-membership.md)
@@ -25,7 +25,7 @@ state.
 > That is what made the proxy routes safe to add, and the two landed together
 > with Corliss v1.4.0, which issues the tokens.
 >
-> Through Phase A (v0.1.x) the relay had no verifier, `sync_relay_require_auth`
+> Through Phase A (v0.1.x) the relay had no verifier, `scn_notes_require_auth`
 > was `false`, and there was deliberately no proxy route. If this role is ever
 > pinned back below v0.2.0, the routes in `caddy_proxy_hosts` must go with it:
 > a v0.1.x relay behind a public route syncs any document to anyone.
@@ -50,7 +50,7 @@ the same shape as [`happyview`](happyview.md). First provision takes ~15–30 mi
 on a cold CT because `cargo build --release` compiles the full dependency graph.
 `target/` is kept afterwards, so a version bump recompiles the relay's own crate
 in a few minutes instead; it is cleared before a build only when free disk
-under `/opt/scn-notes` is below `sync_relay_min_free_gb`, and that build is
+under `/opt/scn-notes` is below `scn_notes_min_free_gb`, and that build is
 a cold one again. The CT is therefore sized
 at 2 GB RAM / 16 GB disk for build headroom — the runtime footprint is far
 lighter.
@@ -69,7 +69,7 @@ lighter.
 | Check checked-out version | `command` → `git describe --tags --exact-match` | Detect version drift; re-clone only when the pinned tag differs from what is on disk. |
 | Clone source at pinned tag | `ansible.builtin.git` | `--depth 1` keeps the clone lean; `force: true` discards drift on re-pin. **The tag must be pushed** — see the gotcha below. |
 | Check free disk | `command` (`df`) | Read before building, for the guard below. |
-| Clear the Cargo build tree when short of disk | `file: state=absent` | Only when a build is due and free disk is below `sync_relay_min_free_gb`. Cargo never prunes old artifacts, so a kept `target/` grows as dependency versions change. |
+| Clear the Cargo build tree when short of disk | `file: state=absent` | Only when a build is due and free disk is below `scn_notes_min_free_gb`. Cargo never prunes old artifacts, so a kept `target/` grows as dependency versions change. |
 | Build (`cargo build --release`) | `command` | Runs only when the clone changed or the binary is missing. `target/` survives the checkout (gitignored; the clone's `force` only discards changes to tracked files), so a bump rebuilds only what changed. No `creates:` guard, since `target/` existing says nothing about which version it holds. Notifies restart. |
 | Install binary to `/opt/scn-notes/bin` | `copy` (remote_src) | `target/release/scn-notes` → the stable install path. |
 | Render the env file | `template` (`0600 root`, `no_log`) | `SCN_NOTES_DATABASE_URL`, `_BIND`, `_REQUIRE_AUTH`, the `_OIDC_ISSUER` and `_OIDC_JWKS_URL` it verifies tokens against, the `_SYNC_AUDIENCE` and `_MCP_AUDIENCE` the old hosts' tokens carry, `_MCP_BIND`, the `notes.` host's `_PUBLIC_URL` and `_PUBLIC_BIND`, and `_SERVICE_TOKEN`, then `RUST_LOG`. Notifies restart. |
@@ -82,7 +82,7 @@ lighter.
 | Wait for the MCP listener | `wait_for` (`127.0.0.1:7031`) | The second listener binds separately and can fail on its own. |
 | Check the `notes.` listener | `uri` (`127.0.0.1:7032/health`) | The third listener binds separately, and the relay refuses to start on a public URL with a path or trailing slash. |
 | Clear away the pre-v0.7.0 names | `file`, `user`, `group` (`state=absent`) | `/etc/scn-sync-relay` (which held the old env file and its secrets), the `scn-sync-relay` user and group. After the smoke test, so a failed upgrade leaves them to look at. |
-| Record the manifest | `include_role: manifest` (`sync_relay_version`) | Last task, after the smoke test, so a service that failed it never claims a version. Writes `sync-relay.json` to Garage for Corliss's `/systems/`. Warns and carries on if the write fails. See [`manifest`](manifest.md). |
+| Record the manifest | `include_role: manifest` (`scn_notes_version`) | Last task, after the smoke test, so a service that failed it never claims a version. Writes `sync-relay.json` to Garage for Corliss's `/systems/`. Warns and carries on if the write fails. See [`manifest`](manifest.md). |
 
 ### Handlers
 
@@ -93,39 +93,39 @@ lighter.
 
 ## Variables
 
-Defined in [`defaults/main.yml`](../../ansible/roles/sync_relay/defaults/main.yml):
+Defined in [`defaults/main.yml`](../../ansible/roles/scn_notes/defaults/main.yml):
 
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
-| `sync_relay_version` | `0.9.0` | Tag checked out and built (the role prefixes `v`). Bump to upgrade; the clone and build tasks re-run when this changes. `0.9.0` stores attachment bytes in the relay's Postgres and serves them on the `notes.` host (scn-notes spec 0002), behind `SCN_NOTES_ATTACHMENTS_ENABLED`, which this role renders off. At startup the binary adds the `attachments` and `attachment_chunks` tables whether or not the flag is on; off, the routes answer `404` and nothing is written to them. `/v1/` CORS also answers any `https` origin by name, beside loopback (scn-notes#33). No proxy change, and rolling back to `0.8.1` is safe: it ignores the new tables. `0.8.1` sends CORS headers on the `notes.` host for a browser client on loopback: `*` on `/.well-known/oauth-protected-resource`, and on `/v1/` the loopback origin by name, never `*` and never with credentials (Corliss#69). It also updates dependencies for security advisories (rustls, webpki, rmcp, jsonwebtoken 12). No new settings, no schema change, no proxy change, and rolling back to `0.8.0` is safe. `0.8.0` adds each member's verified handle to `note_history` and to `POST /v1/documents/{id}/actors`, and marks history groups with `you` and `via: "mcp"`; the relay now makes outbound HTTPS lookups (plc.directory, `did:web` hosts, handle domains) and DNS TXT queries through the CT's resolver, out through the host's NAT like every internal CT, and shows the DID when one fails. No new settings, no schema change, and rolling back to `0.7.1` is safe. `0.7.1` adds the `note_history` MCP tool and `POST /v1/documents/{id}/actors` on the `notes.` host, and stamps the relay's own MCP commits with a time; no new settings, no schema change, and rolling back to `0.7.0` is safe. `0.7.0` is the software renamed `scn-notes`, serving `notes.<domain>` beside the old two hosts, which answer exactly as before; it reads `SCN_NOTES_*` and needs `sync_relay_public_url` and `_public_port`, and the role moves its names over (tasks above). At startup the binary renames its `vaults` table to `workspaces` in one transaction, so **0.6.0 cannot run on the database afterwards**: take a dump before deploying, and rolling back needs the rename reversed first. Corliss must already run the release with Corliss#45, or it refuses the four `OIDC_RESOURCES`. `0.6.0` moves to samod 0.16 and records which member each Automerge actor belongs to, so changes can be traced to a member. At startup the binary adds the `actor_members` and `relay_jobs` tables, then maps stored history once in the background; the journal shows `actor-backfill done` with counts. A sync frame carrying a new change under another member's actor, or a sync message that does not decode, is dropped with a `dropping` log line. No new settings, no change to existing tables, and Corliss and SCN Sync are unchanged. Rolling back to `0.5.1` is safe: it ignores the new tables. `0.5.1` adds `folders` (`Private`, `Workspaces`) beside `vaults` in `GET /vaults`, named even when the member has no vault in one, for SCN Sync 1.2.3's empty Workspaces folder; additive, no new settings, no schema change. `0.5.0` gives each member one private vault at `Private`, with no name, made by the first listing, and replaces `POST`/`PATCH /internal/vaults` with `PUT /internal/vaults/workspace`; deploy Corliss v1.10.0 right after it, and only once every syncing device runs SCN Sync 1.2.0. The binary migrates the `vaults` table at startup and refuses to start if a member has two private vaults; no new settings. `0.4.4` adds the `file-unfiled` subcommand, run by hand with the service stopped, which files a member's documents that no vault reaches into a folder in their private vault; the service is unchanged, no new settings, no schema change. `0.4.3` adds `GET /internal/vaults/all` (every vault with its creator, and each member's documents no vault reaches) for Corliss's admin view; blocked at the edge with the rest of `/internal/*`, no new settings, no schema change. `0.4.2` adds `path` (`Private/<name>` or `Workspaces/<name>`) to each vault in a listing; no new settings, no schema change. `0.4.0`/`0.4.1` add workspace vaults from a `workspaces` claim of workspace IDs (a token without one is a member in no workspace); no new settings, and the binary adds the two new columns at startup. `0.3.0` adds `note_count` and `bytes` to each vault in a listing, shown on Corliss's Notes page; no new settings, no schema change. `0.2.0` is Phase B: token verification, owner-only vaults, `/internal/vaults` and MCP. |
-| `sync_relay_attachments_enabled` | `false` | Serves the attachment routes on the `notes.` host. Off until the relay removes bytes no note names (scn-notes#11), so nothing is stored that nothing cleans up. Off, the routes answer `404` and stored rows stay. |
-| `sync_relay_attachment_max_bytes` / `_workspace_quota_bytes` | `52428800` / `2147483648` | 50 MiB a file (`0` refuses every upload) and 2 GiB a workspace, the binary's own defaults. Read only with the flag on. |
-| `sync_relay_require_auth` | `true` | The binary's own default. It was `false` through Phase A only. |
-| `sync_relay_mcp_port` | `7031` | The MCP listener, routed as `mcp.<domain>` until it retires. |
-| `sync_relay_public_port` | `7032` | The `notes.` listener. |
-| `sync_relay_public_url` | `https://` + `sync_relay_notes_host` | The `notes.` host's URL: the plugin's `aud` there, and with `/mcp`, an MCP client's. An origin; the relay refuses one with a path or trailing slash. |
-| `sync_relay_oidc_issuer` | `https://{{ cluster_domain }}` | The `iss` every token must carry. A local copy of the corliss role's `corliss_url`; keep the two in sync. |
-| `sync_relay_oidc_jwks_url` | composed | Corliss's `/.well-known/jwks.json` at its internal address, derived from its CTID. |
-| `sync_relay_sync_audience` / `_mcp_audience` | `https://` + the group_vars host | The `aud` a sync or MCP token must carry. Built from the same `sync_relay_sync_host` / `sync_relay_mcp_host` Corliss builds `OIDC_RESOURCES` from. |
-| `sync_relay_port` / `sync_relay_host` | `7030` / `0.0.0.0` | Listen socket. The wildcard is mandatory — binding a literal `10.1.1.x` loses a cold-boot race with `systemd-networkd` and comes up silently loopback-only. |
-| `sync_relay_home` / `_bin` / `_src` | `/opt/scn-notes[/bin/scn-notes, /src]` | Install path, binary path, source checkout. |
-| `sync_relay_env_file` | `/etc/scn-notes/scn-notes.env` | The `0600` env read via `EnvironmentFile`. |
-| `sync_relay_unit` / `_old_name` | `scn-notes` / `scn-sync-relay` | The unit, and the pre-v0.7.0 name the role clears away. |
-| `sync_relay_db_name` / `_db_user` | `scn_sync_relay` | Postgres database + role this role creates. |
-| `sync_relay_database_url` | composed | `postgresql://…@{{ hostvars['postgres'].ansible_host }}:5432/…` — the address is derived, never written down. |
-| `sync_relay_repo_url` | GitHub | Public repo, so no credentials are needed at build time. |
-| `sync_relay_min_free_gb` | `4` | Below this much free disk under `/opt/scn-notes`, `target/` is cleared before a build, which is then a cold one. |
+| `scn_notes_version` | `0.9.0` | Tag checked out and built (the role prefixes `v`). Bump to upgrade; the clone and build tasks re-run when this changes. `0.9.0` stores attachment bytes in the relay's Postgres and serves them on the `notes.` host (scn-notes spec 0002), behind `SCN_NOTES_ATTACHMENTS_ENABLED`, which this role renders off. At startup the binary adds the `attachments` and `attachment_chunks` tables whether or not the flag is on; off, the routes answer `404` and nothing is written to them. `/v1/` CORS also answers any `https` origin by name, beside loopback (scn-notes#33). No proxy change, and rolling back to `0.8.1` is safe: it ignores the new tables. `0.8.1` sends CORS headers on the `notes.` host for a browser client on loopback: `*` on `/.well-known/oauth-protected-resource`, and on `/v1/` the loopback origin by name, never `*` and never with credentials (Corliss#69). It also updates dependencies for security advisories (rustls, webpki, rmcp, jsonwebtoken 12). No new settings, no schema change, no proxy change, and rolling back to `0.8.0` is safe. `0.8.0` adds each member's verified handle to `note_history` and to `POST /v1/documents/{id}/actors`, and marks history groups with `you` and `via: "mcp"`; the relay now makes outbound HTTPS lookups (plc.directory, `did:web` hosts, handle domains) and DNS TXT queries through the CT's resolver, out through the host's NAT like every internal CT, and shows the DID when one fails. No new settings, no schema change, and rolling back to `0.7.1` is safe. `0.7.1` adds the `note_history` MCP tool and `POST /v1/documents/{id}/actors` on the `notes.` host, and stamps the relay's own MCP commits with a time; no new settings, no schema change, and rolling back to `0.7.0` is safe. `0.7.0` is the software renamed `scn-notes`, serving `notes.<domain>` beside the old two hosts, which answer exactly as before; it reads `SCN_NOTES_*` and needs `scn_notes_public_url` and `_public_port`, and the role moves its names over (tasks above). At startup the binary renames its `vaults` table to `workspaces` in one transaction, so **0.6.0 cannot run on the database afterwards**: take a dump before deploying, and rolling back needs the rename reversed first. Corliss must already run the release with Corliss#45, or it refuses the four `OIDC_RESOURCES`. `0.6.0` moves to samod 0.16 and records which member each Automerge actor belongs to, so changes can be traced to a member. At startup the binary adds the `actor_members` and `relay_jobs` tables, then maps stored history once in the background; the journal shows `actor-backfill done` with counts. A sync frame carrying a new change under another member's actor, or a sync message that does not decode, is dropped with a `dropping` log line. No new settings, no change to existing tables, and Corliss and SCN Sync are unchanged. Rolling back to `0.5.1` is safe: it ignores the new tables. `0.5.1` adds `folders` (`Private`, `Workspaces`) beside `vaults` in `GET /vaults`, named even when the member has no vault in one, for SCN Sync 1.2.3's empty Workspaces folder; additive, no new settings, no schema change. `0.5.0` gives each member one private vault at `Private`, with no name, made by the first listing, and replaces `POST`/`PATCH /internal/vaults` with `PUT /internal/vaults/workspace`; deploy Corliss v1.10.0 right after it, and only once every syncing device runs SCN Sync 1.2.0. The binary migrates the `vaults` table at startup and refuses to start if a member has two private vaults; no new settings. `0.4.4` adds the `file-unfiled` subcommand, run by hand with the service stopped, which files a member's documents that no vault reaches into a folder in their private vault; the service is unchanged, no new settings, no schema change. `0.4.3` adds `GET /internal/vaults/all` (every vault with its creator, and each member's documents no vault reaches) for Corliss's admin view; blocked at the edge with the rest of `/internal/*`, no new settings, no schema change. `0.4.2` adds `path` (`Private/<name>` or `Workspaces/<name>`) to each vault in a listing; no new settings, no schema change. `0.4.0`/`0.4.1` add workspace vaults from a `workspaces` claim of workspace IDs (a token without one is a member in no workspace); no new settings, and the binary adds the two new columns at startup. `0.3.0` adds `note_count` and `bytes` to each vault in a listing, shown on Corliss's Notes page; no new settings, no schema change. `0.2.0` is Phase B: token verification, owner-only vaults, `/internal/vaults` and MCP. |
+| `scn_notes_attachments_enabled` | `false` | Serves the attachment routes on the `notes.` host. Off until the relay removes bytes no note names (scn-notes#11), so nothing is stored that nothing cleans up. Off, the routes answer `404` and stored rows stay. |
+| `scn_notes_attachment_max_bytes` / `_workspace_quota_bytes` | `52428800` / `2147483648` | 50 MiB a file (`0` refuses every upload) and 2 GiB a workspace, the binary's own defaults. Read only with the flag on. |
+| `scn_notes_require_auth` | `true` | The binary's own default. It was `false` through Phase A only. |
+| `scn_notes_mcp_port` | `7031` | The MCP listener, routed as `mcp.<domain>` until it retires. |
+| `scn_notes_public_port` | `7032` | The `notes.` listener. |
+| `scn_notes_public_url` | `https://` + `scn_notes_notes_host` | The `notes.` host's URL: the plugin's `aud` there, and with `/mcp`, an MCP client's. An origin; the relay refuses one with a path or trailing slash. |
+| `scn_notes_oidc_issuer` | `https://{{ cluster_domain }}` | The `iss` every token must carry. A local copy of the corliss role's `corliss_url`; keep the two in sync. |
+| `scn_notes_oidc_jwks_url` | composed | Corliss's `/.well-known/jwks.json` at its internal address, derived from its CTID. |
+| `scn_notes_sync_audience` / `_mcp_audience` | `https://` + the group_vars host | The `aud` a sync or MCP token must carry. Built from the same `scn_notes_sync_host` / `scn_notes_mcp_host` Corliss builds `OIDC_RESOURCES` from. |
+| `scn_notes_port` / `scn_notes_host` | `7030` / `0.0.0.0` | Listen socket. The wildcard is mandatory — binding a literal `10.1.1.x` loses a cold-boot race with `systemd-networkd` and comes up silently loopback-only. |
+| `scn_notes_home` / `_bin` / `_src` | `/opt/scn-notes[/bin/scn-notes, /src]` | Install path, binary path, source checkout. |
+| `scn_notes_env_file` | `/etc/scn-notes/scn-notes.env` | The `0600` env read via `EnvironmentFile`. |
+| `scn_notes_unit` / `_old_name` | `scn-notes` / `scn-sync-relay` | The unit, and the pre-v0.7.0 name the role clears away. |
+| `scn_notes_db_name` / `_db_user` | `scn_sync_relay` | Postgres database + role this role creates. |
+| `scn_notes_database_url` | composed | `postgresql://…@{{ hostvars['postgres'].ansible_host }}:5432/…` — the address is derived, never written down. |
+| `scn_notes_repo_url` | GitHub | Public repo, so no credentials are needed at build time. |
+| `scn_notes_min_free_gb` | `4` | Below this much free disk under `/opt/scn-notes`, `target/` is cleared before a build, which is then a cold one. |
 
-`sync_relay_db_password` is **not** a role default: it lives in
+`scn_notes_db_password` is **not** a role default: it lives in
 [`group_vars/all/main.yml`](../../ansible/group_vars/all/main.yml) as a
-generate-once `password` lookup under `/root/.zai-secrets`, hex so it needs no
-percent-encoding inside the connection string.
+generate-once `password` lookup of `/root/.zai-secrets/sync_relay_db_password`,
+hex so it needs no percent-encoding inside the connection string.
 
 Also in `group_vars`, because Corliss renders them too:
-`sync_relay_service_token` (generate-once, the credential for `/internal/vaults`,
+`scn_notes_service_token` (generate-once, the credential for `/internal/vaults`,
 not DR-critical: losing it costs a regenerate and a replay of both roles), and
-`sync_relay_notes_host`, the one public hostname members' clients use, and
-`sync_relay_sync_host` / `sync_relay_mcp_host`, the two it replaces.
+`scn_notes_notes_host`, the one public hostname members' clients use, and
+`scn_notes_sync_host` / `scn_notes_mcp_host`, the two it replaces.
 
 ## Dependencies
 
@@ -144,7 +144,7 @@ not DR-critical: losing it costs a regenerate and a replay of both roles), and
 ### Who else reaches this
 
 [`corliss`](corliss.md) polls `/health` from its own CT to render the relay's row
-on `/systems/`, as `corliss_sync_relay_url`, and since v1.4.0 calls
+on `/systems/`, as `corliss_scn_notes_url`, and since v1.4.0 calls
 `/internal/vaults` at the same address for its Notes page. The probe is one unauthenticated hop over `vmbr1` to a read-only liveness
 endpoint, so it neither needs nor gains anything the LAN boundary is holding
 back. What it does mean is that **this role's CTID must be assigned before the
@@ -243,14 +243,15 @@ not have.
 > only LAN-facing CT, and the glibc the binary links against would have to match
 > anyway. Both CTs are Trixie, so building where it runs is the simpler answer.
 
-> [!note] The role is `sync_relay`; the software is `scn-notes`
-> The role, the inventory host, the role's variables and the database are named
-> for the *function* and keep their names; the unix user, unit, paths and
-> env-var prefix keep the crate's own name, because that is what the upstream
-> repo calls itself. The crate was `scn-sync-relay` before v0.7.0, and the role
-> moved those names over then. Renaming the role, the CT or the database would
-> touch the recorded CTID assignment and the data of record for nothing a
-> member sees. Same split as
-> [`object_store`](object_store.md), which deploys Garage as `garage.service`
-> into `/var/lib/garage`. The `scn-` prefix earns its keep on GitHub, where the
-> name has to be unique; inside this repo it would just be noise.
+> [!note] Some names still say sync relay, on purpose
+> The role and its variables follow the software, `scn-notes`, as do the unix
+> user, unit, paths and env-var prefix. The crate was `scn-sync-relay` before
+> v0.7.0 and the role took its current name later, a rename of Ansible names
+> only. The inventory host `sync-relay`, the manifest `sync-relay.json`, the
+> `scn_sync_relay` database and role, Corliss's `SYNC_RELAY_URL` and
+> `SYNC_RELAY_SERVICE_TOKEN`, and the secret files
+> `/root/.zai-secrets/sync_relay_db_password` and `sync_relay_service_token`
+> keep the old name, because each is recorded state on a cluster or read by
+> another repo, so renaming it changes a live box (a changed secret path mints
+> a new password the database does not know). What a full rename would take is
+> scoped in [#107](https://github.com/Z-Space-Society/corliss-ops/issues/107).

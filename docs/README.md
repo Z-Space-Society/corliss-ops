@@ -115,7 +115,7 @@ ansible-playbook provision.yml --limit proxy    # or provision one by hand
   DNS).
 - **Every other CT** (postgres, redis, happyview, litellm, sync-relay, pds,
   corliss, open-webui, scn-chat, beszel) lives only on the internal network and is
-  reached through the proxy. [`sync-relay`](roles/sync_relay.md) serves SCN Notes at
+  reached through the proxy. [`sync-relay`](roles/scn_notes.md) serves SCN Notes at
   `notes.<domain>` (MCP at `/mcp`, the plugin at `/v1/`) and, until they
   retire, at `sync.<domain>` and `mcp.<domain>`; `/internal/` is left
   unrouted. [`beszel`](roles/beszel.md), the
@@ -157,7 +157,7 @@ and the gaps leave room to grow a tier without renumbering:
 | Range       | Tier         | Examples                                   |
 | ----------- | ------------ | ------------------------------------------ |
 | `100`–`109` | Core infra   | control (100), object-store (101), postgres (102), [`redis`](roles/redis.md) (103) |
-| `110`–`119` | Platform     | proxy/edge (110), registry (111, the [`happyview`](roles/happyview.md) role), gateway (112), sync relay (113, the [`sync_relay`](roles/sync_relay.md) role), PDS (114, the [`pds`](roles/pds.md) role) |
+| `110`–`119` | Platform     | proxy/edge (110), registry (111, the [`happyview`](roles/happyview.md) role), gateway (112), sync relay (113, the [`scn_notes`](roles/scn_notes.md) role), PDS (114, the [`pds`](roles/pds.md) role) |
 | `120`–`129` | Applications | [`corliss`](roles/corliss.md) (120), open-webui (121), [`scn-chat`](roles/scn_chat.md) (122), [`beszel`](roles/beszel.md) (123), … other user-facing apps |
 
 What separates the last two tiers is **who talks to it**: platform CTs are
@@ -167,7 +167,7 @@ the membership surface and the page a member lands on. `happyview` is the
 inverse: no one signs in to it, it is the registry `corliss` reads.
 
 "Consumed by members" means a surface a member **lands on**, not merely a port a
-member's device opens a socket to. `litellm` and `sync_relay` are both
+member's device opens a socket to. `litellm` and `scn_notes` are both
 platform even though a member's own client connects to each of them directly,
 authenticated as that member: neither has a page, neither has a login, and both
 are reached *through* an application rather than being one. Reading the rule as
@@ -466,7 +466,7 @@ the API token and has no SSH path to the host, so anything needing host accounts
 | [`litellm`](roles/litellm.md)              | `litellm`  | LiteLLM proxy (venv) — OpenAI-compatible gateway, Postgres-backed; + an always-on CPU floor embedder (`nomic-embed-text`) |
 | [`open-webui`](roles/open-webui.md)        | `open-webui` | OpenWebUI chat UI (uv-managed Python 3.12 venv) — Postgres-backed, fronted by Caddy, talks to litellm for chat + RAG embeddings |
 | [`happyview`](roles/happyview.md)          | `happyview` | HappyView AT Protocol AppView platform (Rust binary, built from source) — Postgres-backed, fronted by Caddy |
-| [`sync_relay`](roles/sync_relay.md) | `sync-relay` | The SCN Notes service, `scn-notes` (Rust binary, built from source) — the server end of the automerge-repo WebSocket protocol behind shared notes, and its MCP service, Postgres-backed. Verifies Corliss-issued access tokens. Routed at `notes.<domain>` from `0.7.0`, and at `sync.<domain>` and `mcp.<domain>` until they retire. See [ADR-0007](decisions/0007-sync-relay-and-space-membership.md) |
+| [`scn_notes`](roles/scn_notes.md) | `sync-relay` | The SCN Notes service, `scn-notes` (Rust binary, built from source) — the server end of the automerge-repo WebSocket protocol behind shared notes, and its MCP service, Postgres-backed. Verifies Corliss-issued access tokens. Routed at `notes.<domain>` from `0.7.0`, and at `sync.<domain>` and `mcp.<domain>` until they retire. See [ADR-0007](decisions/0007-sync-relay-and-space-membership.md) |
 | [`pds`](roles/pds.md)                      | `pds`      | In-house AT Protocol PDS (atproto-pds, Rust binary, built from source at a pinned revision): hosts the cluster's atproto accounts. SQLite on disk, no Postgres. Fronted by Caddy at `pds.<domain>` |
 | [`scn_chat`](roles/scn_chat.md)            | `scn-chat` | SCN AI-assistant chat app (Node 24, built from source at a pinned tag): atproto OAuth sign-in against each member's own PDS. SQLite on disk, **not backed up**. Fronted by Caddy at `chat.<domain>` |
 | [`beszel`](roles/beszel.md)                | `beszel`   | Beszel monitoring hub (Go binary from a checksummed release): per-machine metrics and pending OS updates. SQLite on disk, **not backed up**: Ansible re-asserts the hub key, logins and agent token every run, so a rebuild loses only metrics history. Fronted by Caddy at `monitor.<domain>` |

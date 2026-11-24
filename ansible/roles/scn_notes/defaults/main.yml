@@ -2,7 +2,7 @@
 # Version to build from source. Bump here to upgrade; the role re-clones and
 # rebuilds when this changes. target/ is kept between builds, so a bump
 # recompiles the relay's own crate in a few minutes; the first build, and one
-# after target/ is cleared for disk (sync_relay_min_free_gb), is a cold
+# after target/ is cleared for disk (scn_notes_min_free_gb), is a cold
 # `cargo build --release` of 15-30 min. Either way, a restart.
 #
 # v0.1.1 serves the websocket at the URL root as well as at /sync, and the root
@@ -109,87 +109,87 @@
 # written to them. /v1/ CORS also answers any https origin by name, beside
 # loopback (scn-notes#33). No proxy change. Rolling back to 0.8.1 is safe: it
 # ignores the new tables.
-sync_relay_version: "0.9.0"
+scn_notes_version: "0.9.0"
 
-# Below this much free disk under sync_relay_home, target/ is cleared before a
+# Below this much free disk under scn_notes_home, target/ is cleared before a
 # build, which is then a cold one. The CT has 16 GB; a full build tree is
 # several GB, and it grows as dependency versions change.
-sync_relay_min_free_gb: 4
+scn_notes_min_free_gb: 4
 
-sync_relay_port: 7030
+scn_notes_port: 7030
 # Wildcard, never a literal 10.1.1.x. A container address loses a cold-boot race
 # with systemd-networkd and the service comes up silently loopback-only — the
 # failure mode that took the cluster down on 2026-08-20 via Postgres.
-sync_relay_host: "0.0.0.0"
+scn_notes_host: "0.0.0.0"
 
 # The software's own names, which follow the crate. Before v0.7.0 it was
 # scn-sync-relay; the tasks move the old build tree here and remove the old
 # unit, config and user.
-sync_relay_user: scn-notes
-sync_relay_group: scn-notes
-sync_relay_home: /opt/scn-notes
-sync_relay_bin: /opt/scn-notes/bin/scn-notes
-sync_relay_src: /opt/scn-notes/src
-sync_relay_config_dir: /etc/scn-notes
-sync_relay_env_file: /etc/scn-notes/scn-notes.env
-sync_relay_unit: scn-notes
+scn_notes_user: scn-notes
+scn_notes_group: scn-notes
+scn_notes_home: /opt/scn-notes
+scn_notes_bin: /opt/scn-notes/bin/scn-notes
+scn_notes_src: /opt/scn-notes/src
+scn_notes_config_dir: /etc/scn-notes
+scn_notes_env_file: /etc/scn-notes/scn-notes.env
+scn_notes_unit: scn-notes
 
 # The pre-v0.7.0 names, for the tasks that clear them away.
-sync_relay_old_name: scn-sync-relay
+scn_notes_old_name: scn-sync-relay
 
-sync_relay_db_name: scn_sync_relay
-sync_relay_db_user: scn_sync_relay
-sync_relay_database_url: "postgresql://{{ sync_relay_db_user }}:{{ sync_relay_db_password }}@{{ hostvars['postgres'].ansible_host }}:5432/{{ sync_relay_db_name }}"
+scn_notes_db_name: scn_sync_relay
+scn_notes_db_user: scn_sync_relay
+scn_notes_database_url: "postgresql://{{ scn_notes_db_user }}:{{ scn_notes_db_password }}@{{ hostvars['postgres'].ansible_host }}:5432/{{ scn_notes_db_name }}"
 
 # Phase B: every connection carries a Corliss access token. True is also the
 # binary's own default, so this line exists to be read, not to be changed. It
 # was false through Phase A, while the relay had no verifier and no proxy route.
-sync_relay_require_auth: true
+scn_notes_require_auth: true
 
 # The MCP listener. Its own port so the proxy routes it under its own hostname,
 # and so the sync listener's /internal/ paths can never be reached through it.
-sync_relay_mcp_port: 7031
+scn_notes_mcp_port: 7031
 
 # The notes. listener (v0.7.0): MCP at /mcp, the plugin's API under /v1/, and
 # no /internal/ at all, so the proxy routes the whole host. Its own port for
 # the same reason as MCP's.
-sync_relay_public_port: 7032
+scn_notes_public_port: 7032
 
 # Who issues the tokens the relay accepts: Corliss's public URL, exactly as
 # Corliss's corliss_url spells it, because it is compared with each token's
 # `iss`. A LOCAL default rather than a reach into the corliss role's vars (a
 # role default is not a host fact from this play), same convention as
-# corliss_sync_relay_port. Keep the two in sync.
-sync_relay_oidc_issuer: "https://{{ cluster_domain }}"
+# corliss_scn_notes_port. Keep the two in sync.
+scn_notes_oidc_issuer: "https://{{ cluster_domain }}"
 
 # Where the relay fetches Corliss's signing keys: the internal address, one hop
 # over vmbr1, never the public origin. Corliss already lists its own CT address
 # in ALLOWED_HOSTS for the registry's push, so this Host is accepted. Port kept
 # in sync with corliss_port.
-sync_relay_corliss_port: 8000
-sync_relay_oidc_jwks_url: "http://{{ hostvars['corliss'].ansible_host }}:{{ sync_relay_corliss_port }}/.well-known/jwks.json"
+scn_notes_corliss_port: 8000
+scn_notes_oidc_jwks_url: "http://{{ hostvars['corliss'].ansible_host }}:{{ scn_notes_corliss_port }}/.well-known/jwks.json"
 
 # The audiences: the same group_vars hostnames Corliss builds OIDC_RESOURCES
 # from, so a token Corliss issues names exactly what the relay expects.
-sync_relay_sync_audience: "https://{{ sync_relay_sync_host }}"
-sync_relay_mcp_audience: "https://{{ sync_relay_mcp_host }}"
+scn_notes_sync_audience: "https://{{ scn_notes_sync_host }}"
+scn_notes_mcp_audience: "https://{{ scn_notes_mcp_host }}"
 
 # The notes. host's URL, an origin with no path and no trailing slash: the
 # plugin's audience there, and with /mcp after it, an MCP client's. Corliss's
 # OIDC_RESOURCES builds both from the same group_vars host.
-sync_relay_public_url: "https://{{ sync_relay_notes_host }}"
+scn_notes_public_url: "https://{{ scn_notes_notes_host }}"
 
 # Attachments (v0.9.0). Off until the relay removes bytes no note names
 # (scn-notes#11), so nothing is stored that nothing cleans up. The two limits
 # are the binary's own defaults, written out so a cluster sees what it would
 # get: 50 MiB a file (0 refuses every upload), 2 GiB a workspace.
-sync_relay_attachments_enabled: false
-sync_relay_attachment_max_bytes: 52428800
-sync_relay_attachment_workspace_quota_bytes: 2147483648
+scn_notes_attachments_enabled: false
+scn_notes_attachment_max_bytes: 52428800
+scn_notes_attachment_workspace_quota_bytes: 2147483648
 
-sync_relay_repo_url: "https://github.com/Z-Space-Society/scn-notes"
+scn_notes_repo_url: "https://github.com/Z-Space-Society/scn-notes"
 
 # Pinned in the repo's own rust-toolchain.toml; rustup reads that file and
 # installs the right toolchain regardless of what this channel says. Kept here
 # so the bootstrap install has something to fetch on a cold CT.
-sync_relay_rust_channel: stable
+scn_notes_rust_channel: stable
