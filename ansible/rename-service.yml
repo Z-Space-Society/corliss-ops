@@ -76,8 +76,8 @@
       ansible.builtin.assert:
         that: not (old in recorded and new in recorded)
         fail_msg: >-
-          inventory/local.yml records both '{{ old }}' ({{ recorded[old] }}) and
-          '{{ new }}' ({{ recorded[new] }}). Which one holds the data is a
+          inventory/local.yml records both '{{ old }}' ({{ recorded.get(old) }}) and
+          '{{ new }}' ({{ recorded.get(new) }}). Which one holds the data is a
           judgement this playbook will not make.
 
     - name: Note whether there is anything to move
@@ -236,6 +236,6 @@
         - name: Report
           ansible.builtin.debug:
             msg: >-
-              {{ old }} is now {{ new }} (CTID {{ recorded[old].ctid | default('-') }}).
+              {{ old }} is now {{ new }} (CTID {{ recorded.get(old, {}).get('ctid', '-') }}).
               Next: ansible-playbook provision.yml --limit {{ new }}, then
               ansible-playbook monitor-agent.yml --limit beszel for its alerts.
