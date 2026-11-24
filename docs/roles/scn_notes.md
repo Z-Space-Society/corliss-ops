@@ -246,12 +246,9 @@ not have.
 > [!note] Some names still say sync relay, on purpose
 > The role and its variables follow the software, `scn-notes`, as do the unix
 > user, unit, paths and env-var prefix. The crate was `scn-sync-relay` before
-> v0.7.0 and the role took its current name later. The inventory host
-> followed, `sync-relay` becoming `scn-notes`, which a cluster takes with
-> [`rename-service.yml`](../../ansible/rename-service.yml) before its first
-> provision on that release: it moves the CTID in `inventory/local.yml` and
-> the deploy records in Garage, and deletes the old Beszel system, so the
-> relay's metrics history starts over. The `scn_sync_relay` database and role,
+> v0.7.0, and the inventory host was `sync-relay` until v0.17.2 (moved on a
+> cluster by [`rename-service.yml`](../../ansible/rename-service.yml), which
+> started the relay's Beszel history over). The `scn_sync_relay` database and role,
 > Corliss's `SYNC_RELAY_URL` and `SYNC_RELAY_SERVICE_TOKEN`, and the secret
 > files `/root/.zai-secrets/sync_relay_db_password` and
 > `sync_relay_service_token` keep the old name, because each is recorded
