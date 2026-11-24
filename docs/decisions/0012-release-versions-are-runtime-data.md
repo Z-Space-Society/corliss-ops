@@ -33,6 +33,9 @@ offers after an unrelated change, puts the role default back.
 3. **Role defaults:** scn-chat follows `latest`; Corliss is pinned to a tag.
    (Revised by [ADR-0013](0013-autodeploy-on-a-timer.md): Corliss follows
    `latest` too.)
+   (Revised 2026-11-24: scn-chat's default is pinned to a tag, which moves with
+   the pds role's `pds_revision`, because gel.chat and the PDS must be on the
+   same spaces alpha. zai-ops#104.)
    Both accept either.
 
 4. **Nothing in zai-ops provisions on its own.** A `latest` app moves only

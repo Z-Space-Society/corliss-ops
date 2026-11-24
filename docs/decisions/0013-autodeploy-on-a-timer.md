@@ -49,6 +49,10 @@ trigger that reaches in from GitHub ran into one of these problems:
 
 5. **Both apps default to `latest`.** scn-chat already did. Corliss moves from
    a pinned tag to `latest`, so its releases deploy on the timer as well.
+   (Revised 2026-11-24: scn-chat's default is now a pinned tag, so the timer
+   leaves it alone. A gel.chat release on a new spaces alpha must not deploy
+   ahead of the PDS that speaks it; the pin moves with `pds_revision`.
+   zai-ops#104.)
 
 6. **Corliss reads the records; it can't write them.** Corliss's key on the
    manifest bucket is read-only, so what it shows on its admin deploys page is
