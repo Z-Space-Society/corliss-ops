@@ -115,10 +115,13 @@
   gather_facts: false
   any_errors_fatal: true
   tasks:
+    # Not gated on there being a CTID to move. An agent still running under
+    # the old name re-enrolls as a new system once its record is deleted, and
+    # that system goes down (and alerts) when the provision restarts the agent
+    # under the new name. Running this again straight after that provision
+    # clears it.
     - name: Delete the system record
-      when:
-        - ctid is defined
-        - hostvars['localhost'].rename_needed | bool
+      when: ctid is defined
       block:
         - name: Sign in to the hub as the superuser
           ansible.builtin.uri:
