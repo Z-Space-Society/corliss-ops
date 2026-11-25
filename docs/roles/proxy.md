@@ -105,7 +105,7 @@ The committed routes, and what each publishes of its upstream:
 
 | Hostname | Service | Everything, or less |
 | -------- | ------- | ------------------- |
-| apex | `corliss` | everything except `/admin/` and `/membership/events`, which answer 404 |
+| apex | `corliss` | everything except `/admin/login/` and `/membership/events`, which answer 404 |
 | `api.` | `litellm` | everything, `/ui` included (the admin panel, behind the master key; see [zai-ops#44](https://github.com/Z-Space-Society/zai-ops/issues/44)) |
 | `owui.` | `open-webui` | everything; `/auth*` is redirected to the OIDC login unless the session cookie is present |
 | `view.` | `happyview` | everything |
@@ -288,11 +288,16 @@ ss -HMlnp
   vault endpoints for Corliss there, guarded by the service token alone.
   `block_paths` answers them with a 404 at the edge; Corliss reaches them over
   vmbr1.
-- **The apex does not publish Corliss's `/admin/` or `/membership/events`.**
-  HappyView pushes membership events CT-to-CT over vmbr1. The Django admin is
-  break-glass, reached through a tunnel to the host (see
-  [corliss](corliss.md#notes)). `/admin` is blocked as well as `/admin/*`, so
-  the bare path never reaches Django's slash redirect.
+- **The apex does not publish Corliss's `/admin/login/` or
+  `/membership/events`.** HappyView pushes membership events CT-to-CT over
+  vmbr1. `/admin/login/` is the break-glass password form, reached through a
+  tunnel to the host (see [corliss](corliss.md#notes)); `/admin/login` is
+  blocked as well, so the bare path never reaches Django's slash redirect.
+  The rest of `/admin/` is published for roster admins, who arrive already
+  signed in with their handle. Corliss also refuses the form off the tunnel;
+  blocking it here as well keeps the break-glass password off the internet
+  even if that check ever broke. The cost: a signed-out visit straight to
+  `/admin/` lands on this 404 instead of a sign-in page, so sign in first.
 - **Empty `caddy_proxy_hosts` is safe** — the `:80` site (health probe + HTTPS
   redirect) keeps the Caddyfile valid before any upstream is assigned, mirroring
   the inventory's placeholder pattern.

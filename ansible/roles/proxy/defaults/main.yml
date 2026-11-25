@@ -83,14 +83,15 @@ caddy_proxy_hosts:
   # bare origin, and discovery has to sit at <issuer>/.well-known/... .
   #
   # Two Corliss paths are for inside the cluster only. /membership/events is the
-  # registry's push, which HappyView sends CT-to-CT over vmbr1. /admin/ is the
-  # Django admin and its break-glass login, reached through an SSH tunnel to the
-  # host (see docs/roles/corliss.md); "/admin" is listed too so the bare path
-  # cannot reach Django's slash redirect.
+  # registry's push, which HappyView sends CT-to-CT over vmbr1. /admin/login/ is
+  # the break-glass password form, reached through an SSH tunnel to the host
+  # (see docs/roles/corliss.md); "/admin/login" is listed too so the bare path
+  # cannot reach Django's slash redirect. The rest of /admin/ is published:
+  # roster admins sign in with their handle and Corliss asks the roster.
   - domain: "{{ cluster_domain }}"
     service: corliss
     port: 8000
-    block_paths: ["/admin", "/admin/*", "/membership/events"]
+    block_paths: ["/admin/login", "/admin/login/*", "/membership/events"]
   # The sync relay (Phase B, relay v0.2.0). Two hostnames, two listeners: the
   # automerge sync websocket on 7030 and the MCP service on 7031. The hostnames
   # come from group_vars because Corliss and the relay build token audiences
