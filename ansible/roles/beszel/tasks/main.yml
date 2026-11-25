@@ -171,6 +171,28 @@
   register: beszel_superuser_auth
   no_log: true
 
+# Beszel 0.21.1 turns on PocketBase's rate limits once, with one rule: 10
+# sign-ins a minute per address. This sets that rule to beszel_signin_limit and
+# sends the whole list, so it is the only rule. The migration never runs again,
+# so nothing puts the 10 back. Sent every run and reported unchanged, like the
+# mail settings.
+- name: Set the hub's sign-in rate limit
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ beszel_port }}/api/settings"
+    method: PATCH
+    body_format: json
+    headers:
+      Authorization: "{{ beszel_superuser_auth.json.token }}"
+    body:
+      # One expression, as in mail.yml, so maxRequests reaches PocketBase as a
+      # number and not the string a scalar template renders.
+      rateLimits: >-
+        {{ {'enabled': true,
+            'rules': [{'label': '*:auth',
+                       'maxRequests': beszel_signin_limit | int,
+                       'duration': 60}]} }}
+  changed_when: false
+
 # PocketBase mails a superuser on every sign-in from a new address or client.
 # This superuser is Ansible's alone and signs in on every run, so the notices
 # are noise to whoever reads ansible@<domain>. The admin login keeps its alerts.

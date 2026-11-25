@@ -68,6 +68,7 @@ accepted, and there is **no Tier-2 backup** of this CT.
 | Smoke test | `wait_for` `127.0.0.1:8090`, then `uri /api/health` | `/api/health` must return 200. |
 | Assert the superuser | `command` → `runuser -u beszel -- beszel superuser upsert … --dir` | The PocketBase CLI is the only way to set a superuser without already having one. It runs as `beszel`, so it never leaves a root-owned SQLite file. `changed_when: false`: upsert always succeeds and only re-hashes. |
 | Sign in, look up the admin | `uri` (`no_log`) | A superuser token from `/api/collections/_superusers/auth-with-password`, then the user by email. |
+| Set the sign-in rate limit | `uri` PATCH `/api/settings` | Beszel 0.21.1 turns on PocketBase's rate limits once with `*:auth` at 10 sign-ins a minute per address. This sends the whole rule list, `*:auth` at `beszel_signin_limit` per 60 s, so it is the only rule and the migration never puts the 10 back. Sent every run and reported unchanged. |
 | Turn off the superuser's new-login alerts | `uri` PATCH `/api/collections/_superusers` | PocketBase mails a superuser on every sign-in from a new address or client. This one is Ansible's and signs in every run, so the notices to `ansible@<domain>` are noise. The admin login keeps its alerts. |
 | Create the admin | `uri` POST (`no_log`) | Only when missing. `verified: true` (the users collection's `authRule` is `verified=true`) and `role: admin`. |
 | Check, then restore the admin | `uri` (`no_log`) | Signs in as the admin. It PATCHes only what drifted, and sets the password only when signing in fails, because setting it rotates PocketBase's token key and would sign the admin out on every run. |
@@ -94,7 +95,7 @@ other roles read them too:
 
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
-| `beszel_version` | `0.21.0` | The release for the hub, and for [`monitor_agent`](monitor_agent.md). |
+| `beszel_version` | `0.21.2` | The release for the hub, and for [`monitor_agent`](monitor_agent.md). |
 | `beszel_host` | `monitor.{{ cluster_domain }}` | The public hostname. The proxy routes it; the hub's `APP_URL` is built from it. |
 | `beszel_port` | `8090` | Listen port. The agents' `HUB_URL` names it. |
 | `beszel_superuser_email` | `ansible@{{ cluster_domain }}` | Ansible's superuser, also used by the agents' smoke test on the hub's `127.0.0.1`. Receives no mail. |
@@ -107,6 +108,7 @@ In [`defaults/main.yml`](../../ansible/roles/beszel/defaults/main.yml):
 | Variable | Default | Meaning |
 | -------- | ------- | ------- |
 | `beszel_hub_url` / `beszel_hub_sha256` | the v`beszel_version` tarball | Bump the checksum with the version, taken from the release's `beszel_<version>_checksums.txt`. |
+| `beszel_signin_limit` | `20` | Sign-ins a minute per client address. See [Public surface](#public-surface) for why every public visitor shares one bucket. |
 | `beszel_bind` | `0.0.0.0` | Listen address. The wildcard is mandatory, for the same cold-boot reason as `scn_notes_host`. |
 | `beszel_data_dir` | `/var/lib/beszel` | PocketBase's `--dir`: the database and the hub key. |
 | `beszel_app_url` | `https://{{ beszel_host }}` | Rendered as `APP_URL`. |
@@ -182,6 +184,15 @@ with a 404:
 (step 6) dial in through it, with the agent token.
 
 Ansible uses all of these on `127.0.0.1`, inside the CT.
+
+Sign-ins are limited to `beszel_signin_limit` (20) a minute per client address.
+The hub does not trust `X-Forwarded-For`, so every public visitor arrives as the
+proxy's address and they all share that one bucket: a client hammering the
+sign-in page can hold off everyone else for up to a minute. That is left as is
+on purpose. The hub listens on `0.0.0.0:8090` and every CT on vmbr1 reaches it
+directly, because the agents dial it there, so trusting the header would let
+any container forge an address per request and guess the superuser password
+without limit. Ansible signs in from `127.0.0.1`, its own bucket.
 
 ## Verify
 

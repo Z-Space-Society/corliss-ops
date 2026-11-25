@@ -11,12 +11,18 @@
 # and take it from the release's own beszel_<version>_checksums.txt rather than
 # from a copy. get_url fails the run on a mismatch.
 beszel_hub_url: "https://github.com/henrygd/beszel/releases/download/v{{ beszel_version }}/beszel_linux_amd64.tar.gz"
-beszel_hub_sha256: "c0cbab161f322426228419fbbeab4163dded6464a537cc1e2f92e090892f6368"
+beszel_hub_sha256: "7d0b8d9547e36aa05230763fed3d9b75fb5a72e37b9d813712ba1c0c21fed045"
 
 # Wildcard, never a literal 10.1.1.x. A container address loses a cold-boot race
 # with systemd-networkd and the service comes up silently loopback-only (see
 # scn_notes_host).
 beszel_bind: "0.0.0.0"
+
+# Sign-ins per minute per client address, Beszel's own limit from 0.21.1 raised
+# from 10. The hub does not trust X-Forwarded-For, so every public visitor
+# arrives as the proxy's address and shares this one bucket; Ansible signs in
+# from 127.0.0.1 and has its own.
+beszel_signin_limit: 20
 
 beszel_user: beszel
 beszel_group: beszel

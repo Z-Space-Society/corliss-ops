@@ -288,7 +288,7 @@ scn_notes_notes_host: "notes.{{ cluster_domain }}"
 # version is here rather than in the beszel role's defaults because the agent
 # role installs the same release, and a hub and agents on different releases is
 # a mismatch nobody chose.
-beszel_version: "0.21.0"
+beszel_version: "0.21.2"
 
 # The hub's public hostname. Here because two roles read it: the proxy routes
 # it, and the hub takes https://<host> as its APP_URL. Agents outside the
