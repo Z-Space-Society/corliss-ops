@@ -72,7 +72,7 @@ service's metrics history starts over.
 | Install the unit, start + enable | `template`, `systemd` | Hardened; `Restart=on-failure` (see Notes). |
 | Install the apt list refresh | `copy`, `systemd` | `apt-lists-refresh.timer`, daily with up to an hour's random delay, `Persistent=true`. See Notes for why not `APT::Periodic`. |
 | Refresh the lists if a day old | `apt` (`cache_valid_time: 86400`) | A new CT gets current lists before the agent's first check, not whatever the template shipped. |
-| Smoke test | `uri` on the hub CT's `127.0.0.1`, `delegate_to: beszel` | Signs in as the superuser and waits until this host's system record is `up`. That proves the agent enrolled and reported, which `systemctl` can't. It does not wait for the updates count, which arrives on a later report. |
+| Smoke test | `uri` on the hub CT's `127.0.0.1`, `delegate_to: beszel` | Signs in as the superuser once per run (`run_once`, the token shared with every host, because the hub limits sign-ins per address and they all come from `127.0.0.1`) and waits until this host's system record is `up`. That proves the agent enrolled and reported, which `systemctl` can't. It does not wait for the updates count, which arrives on a later report. |
 
 There is **no manifest**. The manifest key is the inventory name, so an agent
 manifest would overwrite the service's own `<service>.json`. Nothing reaches the

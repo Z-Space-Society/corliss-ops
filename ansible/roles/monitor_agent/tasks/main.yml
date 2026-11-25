@@ -189,6 +189,9 @@
 # Run on the hub CT against 127.0.0.1, where Ansible uses the superuser, never
 # over the bridge. It does not wait for the updates count: the first apt check
 # runs in the background and lands on a later report.
+#
+# Signed in once per run, and the token is shared with every host: the hub
+# limits sign-ins per address, and every host here signs in from 127.0.0.1.
 - name: Sign in to the hub as the superuser
   ansible.builtin.uri:
     url: "http://127.0.0.1:{{ beszel_port }}/api/collections/_superusers/auth-with-password"
@@ -199,6 +202,7 @@
       password: "{{ beszel_superuser_password }}"
   register: monitor_agent_hub_auth
   delegate_to: beszel
+  run_once: true
   no_log: true
 
 - name: Wait for the hub to show this system up

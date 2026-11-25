@@ -10,7 +10,7 @@
 # and take it from the release's own beszel_<version>_checksums.txt rather than
 # from a copy. get_url fails the run on a mismatch.
 monitor_agent_url: "https://github.com/henrygd/beszel/releases/download/v{{ beszel_version }}/beszel-agent_linux_amd64.tar.gz"
-monitor_agent_sha256: "898d67d456a4feed7d651bbac22def5eb41840d4f3d9bf058a5ed37c8c815599"
+monitor_agent_sha256: "0359a4c3b9d800ba865b2be4081c7f0df8ba29a8c5c0ac76e72f490f28496909"
 
 # The hub's internal address on vmbr1, never monitor.<domain>: an agent inside
 # the cluster has no reason to hairpin through the proxy, and this way it works
