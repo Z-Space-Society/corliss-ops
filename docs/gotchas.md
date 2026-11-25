@@ -148,6 +148,14 @@ On the **control node** itself:
   The same snippet also `cd`s a fresh login/`pct enter` into `/opt/zai-ops` (guarded
   on `$PWD = $HOME`, so a shell that's already navigated elsewhere is left alone) —
   no more manual `cd /opt/zai-ops` on every session.
+- **A forwarded locale the CT doesn't have stops Ansible cold.** An operator whose
+  laptop runs `LANG=en_CA.UTF-8` carries it through ssh (sshd's `AcceptEnv LANG
+  LC_*`), sudo and `pct enter` into CT 100, which generates only `en_US.UTF-8`.
+  Every `ansible-playbook` then dies with "could not initialize the preferred
+  locale". Fix: the same `zai-ops.sh` snippet runs `locale`, and if it reports
+  "Cannot set", drops the `LC_*` variables and sets `LANG=C.UTF-8`, which glibc
+  always has. A fallback rather than generating each operator's locale, so no
+  operator's setting has to be known in advance.
 
 On the **Proxmox host** itself:
 
