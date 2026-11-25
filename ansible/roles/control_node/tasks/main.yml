@@ -110,6 +110,15 @@
       # Land in the repo on a fresh login/pct-enter, without moving a shell
       # that has already navigated elsewhere.
       [ "$PWD" = "$HOME" ] && [ -d /opt/zai-ops ] && cd /opt/zai-ops
+      # An operator's SSH session can forward a locale this container doesn't
+      # have (sshd's AcceptEnv LANG LC_*, kept through sudo and pct enter), and
+      # Ansible then refuses to start. Fall back to C.UTF-8, which is always there.
+      if locale 2>&1 >/dev/null | grep -q Cannot; then
+        unset LANGUAGE LC_ALL LC_CTYPE LC_MESSAGES LC_COLLATE LC_NUMERIC LC_TIME \
+          LC_MONETARY LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT \
+          LC_IDENTIFICATION
+        export LANG=C.UTF-8
+      fi
 
 # `pct enter` gives an interactive *non-login* shell, which skips /etc/profile.d
 # entirely — so the snippet above never loads there. Interactive non-login bash
