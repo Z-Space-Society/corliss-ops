@@ -31,10 +31,10 @@
 # The 2026-11-12 alpha is a hard cut with no aliases: getSpaceCredential is
 # authorizeSpaceSync, notifyWrite is notifyRepoUpdate, listRepos is
 # listWriters, and member changes are batched (putMembers/removeMembers). A
-# client still on the 2026-10-29 alpha fails here. scn_chat_version (the
-# scn_chat role's defaults) is pinned to gel.chat v0.20.0, a release on this
-# alpha: move the two pins in the same change and deploy them together, the
-# PDS first and scn-chat right after.
+# client still on the 2026-10-29 alpha fails here; gel.chat is on this alpha
+# from v0.20.0. scn_chat_version (the scn_chat role's defaults) follows latest.
+# A bump that changes the alpha pins it to the matching gel.chat release first
+# and moves the two together, the PDS first and scn-chat right after.
 #
 # Checked against 19b34ef before bumping: the four build features below and
 # every PDS_* name the role's templates write still exist; the new optional

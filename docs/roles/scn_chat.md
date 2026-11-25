@@ -62,7 +62,7 @@ Where a member's chats live is decided at first sign-in:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `scn_chat_version` | `v0.20.0` | A release tag, or `latest`, the newest one each provision. Pinned because gel.chat and the [PDS](pds.md) must be on the same spaces alpha, and on `latest` the autodeploy timer would ship a gel.chat release ahead of the PDS; this pin moves in the same change as `pds_revision`. A cluster can record its own with `scn-config nonint set-version scn-chat <tag>` (or the Versions menu), recorded in `inventory/local.yml` over this default. Pinning back across a migration is unsafe: they run forward only |
+| `scn_chat_version` | `latest` | A release tag, or `latest`, the newest one each provision. gel.chat and the [PDS](pds.md) must be on the same spaces alpha, so across a PDS bump that changes the alpha this is pinned to the matching release first and moved with `pds_revision`, then returned to `latest`. A cluster can record its own with `scn-config nonint set-version scn-chat <tag>` (or the Versions menu), recorded in `inventory/local.yml` over this default. Pinning back across a migration is unsafe: they run forward only |
 | `scn_chat_repo_url` | `https://tangled.org/scnorg.tngl.sh/gel.chat` | |
 | `scn_chat_node_version` / `scn_chat_node_sha256` | `v24.21.0` / pinned | Change together |
 | `scn_chat_port` | `3000` | Keep in sync with `corliss_chat_port` |
@@ -132,6 +132,6 @@ ansible-playbook provision.yml --limit scn-chat
 - **A fresh deploy can't chat yet.** Nobody can chat until an admin enables a provider plugin and configures a model, or members add their own keys.
 - **Admin models run on one shared LiteLLM key**, limited to the `scn-member` role. It was created by hand in the LiteLLM admin UI and is entered in scn-chat's provider settings; see [`litellm`](litellm.md#four-key-management-paths-kept-deliberately-separate).
 - **`ALLOW_PRIVATE_NETWORKS=false` stays.** The CT sits on vmbr1 beside postgres, redis and litellm. The flag governs DID and PDS resolution, the plugins' own fetches (web search, web fetch, the registry) and members' own model endpoints, and keeps all of them off 10.1.1.0/24. It does not govern the admin's configured provider, which the app calls directly: the shared LiteLLM key belongs at `http://10.1.1.112:4000` in the admin area, one hop over vmbr1, not at the public `api.` origin.
-- **Upstream is experimental.** The `@atproto/*` packages are spaces-alpha releases, pinned exactly by the tag. The role pins a tag for that reason; on `latest`, the next provision would deploy whatever was tagged last.
+- **Upstream is experimental.** The `@atproto/*` packages are spaces-alpha releases, pinned exactly by the tag. On `latest`, the next provision deploys whatever was tagged last, including a release on a newer spaces alpha than the PDS speaks; pin a tag across that change.
 - **Corliss links it in the nav** as **Chat**, between Notes and API, from v1.4.2 (`CHAT_URL`, rendered from `corliss_chat_public_url`). It is members-only there, like its neighbours, and scn-chat's own sign-in is limited to members too.
 - **Staging with webhook auto-deploy** is planned, not in this round. [zai-ops#33](https://github.com/Z-Space-Society/zai-ops/issues/33) holds the work, starting from #26's first version.

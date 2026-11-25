@@ -250,8 +250,9 @@ rotation key below, is
 - 0016 permissioned-data (spaces) is a Phase-C direction, not a near-term
   promise — the draft is settling.
 - A spaces alpha can break clients and convert stored data. The pin is on the
-  2026-11-12 alpha, with [scn-chat](scn_chat.md) pinned to gel.chat v0.20.0 to
-  match. Across such a bump, snapshot `/var/lib/pds` with the service stopped
+  2026-11-12 alpha, which [scn-chat](scn_chat.md) speaks from gel.chat v0.20.0.
+  Across a bump that changes the alpha, first pin `scn_chat_version` to the
+  matching gel.chat release (it follows `latest` otherwise), snapshot `/var/lib/pds` with the service stopped
   first (the conversion cannot be undone and the older binary cannot run on the
   result), then provision the PDS and scn-chat as two runs, PDS first. The pds
   play builds for 15-30 minutes while the old server keeps serving, so chat is
