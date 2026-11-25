@@ -20,32 +20,38 @@
 # source that is down fails every provision that has to clone. Point this back
 # at the fork once it is synced and the knot's uptime is something we rely on.
 #
-# Pinned to be466e5aec3d (2026-10-30, upstream main): atproto-pds still
-# 0.15.0-rc.6, workspace edition 2024 / rust-version 1.97 / license MIT, verified
-# against that commit. It replaced 09a868cdde93 (2026-10-22, 35 commits earlier).
-# What the bump is for: staying current with upstream, which brings the
-# 2026-10-29 spaces alpha and a migration wizard that signs in at the old host
-# and carries an account's spaces.
+# Pinned to 19b34ef1f1f5 (2026-11-19, upstream main): atproto-pds 0.15.0-rc.8,
+# workspace edition 2024 / rust-version 1.97 (rust-toolchain.toml pins 1.97,
+# which cargo installs from the clone) / license MIT, verified against that
+# commit. It replaced be466e5aec3d (2026-10-30, 101 commits earlier). What the
+# bump is for: the 2026-11-05 and 2026-11-12 spaces alphas, and draft-04 repo
+# and firehose conformance. importRepo and uploadBlob are stricter, so a
+# malformed repo that imported before may now be refused on migration.
 #
-# That alpha is a hard cut: every com.atproto.simplespace.* method is gone, with
-# no aliases, so a client still calling them fails here. scn-chat must be on the
-# 20261029 alpha too; deploy the two together. scn_chat_version (the scn_chat
-# role's defaults) is pinned to a release on this alpha: move it in the same
-# change as pds_revision.
+# The 2026-11-12 alpha is a hard cut with no aliases: getSpaceCredential is
+# authorizeSpaceSync, notifyWrite is notifyRepoUpdate, listRepos is
+# listWriters, and member changes are batched (putMembers/removeMembers). A
+# client still on the 2026-10-29 alpha fails here. scn_chat_version (the
+# scn_chat role's defaults) is pinned to gel.chat v0.20.0, a release on this
+# alpha: move the two pins in the same change and deploy them together, the
+# PDS first and scn-chat right after.
 #
-# Checked against be466e5 before bumping: the four build features below and
-# every PDS_* name the role's templates write still exist. The first boot after
-# the bump runs an accounts migration, and each actor store converts its spaces
-# to one policy when it is first opened, dropping the simplespace columns. That
-# conversion cannot be undone and the older binary cannot read the result, so
-# snapshot /var/lib/pds with the service stopped before the first boot.
+# Checked against 19b34ef before bumping: the four build features below and
+# every PDS_* name the role's templates write still exist; the new optional
+# PDS_METADATA_MAX_AGE, PDS_ENTRYWAY_INTERNAL_URL and
+# PDS_SPACE_SUBSPACE_MAX_DEPTH are left at their defaults. The first boot runs
+# migrations that drop space_notify_registration,
+# space_deleted_notification_retry and two space_repo columns, taking every
+# syncer registration with them (gel.chat re-registers at startup). That cannot
+# be undone and the older binary cannot run on the result, so snapshot
+# /var/lib/pds with the service stopped before the first boot.
 #
 # Upstream publishes no tag to fetch, so the revision IS the reproducibility
 # pin. A bump drives a re-clone + rebuild (cold cargo build, ~15-30 min, same
 # budget as happyview); re-verify pds_version against the new commit.
 pds_repo_url: "https://tangled.org/ngerakines.me/atproto-crates"
-pds_version: "0.15.0-rc.6"        # informational; verified against the checkout
-pds_revision: "be466e5aec3dba05b895ca9cc11f274435f0d758"
+pds_version: "0.15.0-rc.8"        # informational; verified against the checkout
+pds_revision: "19b34ef1f1f5d3853bcf0f964066525d4c564961"
 
 # Build features — the default sqlite storage profile stays on. clap is
 # REQUIRED (both bin targets gate on it); smtp = outbound mail (invites/2FA),

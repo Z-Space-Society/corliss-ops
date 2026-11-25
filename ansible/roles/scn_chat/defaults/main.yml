@@ -19,9 +19,10 @@
 # PDS, and the two must be on the same spaces alpha: each alpha removes the
 # previous one's methods with no aliases. On `latest`, zai-autodeploy would
 # deploy a gel.chat release within a minute of its tag, ahead of the PDS it
-# needs. v0.19.1 is on the 2026-10-29 alpha, matching the pds role's
+# needs. v0.20.0 is on the 2026-11-12 alpha (built on the 2026-11-17 npm
+# packages, whose spaces lexicons are the same), matching the pds role's
 # pds_revision. Move this pin and pds_revision in the same change (#104).
-scn_chat_version: "v0.19.1"
+scn_chat_version: "v0.20.0"
 scn_chat_repo_url: "https://tangled.org/scnorg.tngl.sh/gel.chat"
 
 # Node.js: pinned LTS tarball with its SHA-256, the tarball + checksum

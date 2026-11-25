@@ -73,8 +73,8 @@ committed. Key defaults in `roles/pds/defaults/main.yml`:
 | Var | Default | Meaning |
 |---|---|---|
 | `pds_repo_url` | `https://tangled.org/ngerakines.me/atproto-crates` | build source: Nick's canonical workspace. The SCN fork (`sharedcomputer.network/atproto-crates`, on the @commonscomputer.com knot) is not used while it trails upstream; see the comment in `defaults/main.yml` |
-| `pds_revision` | `be466e5aec3d…` | **the reproducibility pin**, a commit SHA |
-| `pds_version` | `0.15.0-rc.6` | informational; verified against the checkout |
+| `pds_revision` | `19b34ef1f1f5…` | **the reproducibility pin**, a commit SHA |
+| `pds_version` | `0.15.0-rc.8` | informational; verified against the checkout |
 | `pds_hostname` | `pds.{{ cluster_domain }}` | public hostname (SCN: `pds.sharedcomputer.network`) |
 | `pds_service_did` | `did:web:pds.{{ cluster_domain }}` | the PDS's own service identity |
 | `pds_handle_domain` | `{{ cluster_domain }}` | where member handles are issued. Recorded per cluster with `scn-config` (Cluster Settings, Domains), never by hand (SCN: `sharedcomputer.net`) |
@@ -249,10 +249,15 @@ rotation key below, is
 - Single instance, SQLite-only: one LXC, and no replica.
 - 0016 permissioned-data (spaces) is a Phase-C direction, not a near-term
   promise — the draft is settling.
-- A spaces alpha can break clients and convert stored data. Across such a bump,
-  deploy the PDS and [scn-chat](scn_chat.md) together, and snapshot
-  `/var/lib/pds` with the service stopped first: the conversion cannot be undone
-  and the older binary cannot read the result.
+- A spaces alpha can break clients and convert stored data. The pin is on the
+  2026-11-12 alpha, with [scn-chat](scn_chat.md) pinned to gel.chat v0.20.0 to
+  match. Across such a bump, snapshot `/var/lib/pds` with the service stopped
+  first (the conversion cannot be undone and the older binary cannot run on the
+  result), then provision the PDS and scn-chat as two runs, PDS first. The pds
+  play builds for 15-30 minutes while the old server keeps serving, so chat is
+  only out of step for its own build. One `--limit pds,scn-chat` run does
+  scn-chat first, since its play comes earlier in `provision.yml`, and leaves
+  chat broken for the whole cargo build.
 - The SCN **account** rotation key (boris's, signed on PDS Commons Computer) is
   distinct from this server's `PDS_PLC_ROTATION_KEY_PRIVATE` (recovery for
   identities it issues). Both are DR-critical, and the second is not wired yet

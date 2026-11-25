@@ -62,7 +62,7 @@ Where a member's chats live is decided at first sign-in:
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `scn_chat_version` | `v0.19.1` | A release tag, or `latest`, the newest one each provision. Pinned because gel.chat and the [PDS](pds.md) must be on the same spaces alpha, and on `latest` the autodeploy timer would ship a gel.chat release ahead of the PDS; this pin moves in the same change as `pds_revision`. A cluster can record its own with `scn-config nonint set-version scn-chat <tag>` (or the Versions menu), recorded in `inventory/local.yml` over this default. Pinning back across a migration is unsafe: they run forward only |
+| `scn_chat_version` | `v0.20.0` | A release tag, or `latest`, the newest one each provision. Pinned because gel.chat and the [PDS](pds.md) must be on the same spaces alpha, and on `latest` the autodeploy timer would ship a gel.chat release ahead of the PDS; this pin moves in the same change as `pds_revision`. A cluster can record its own with `scn-config nonint set-version scn-chat <tag>` (or the Versions menu), recorded in `inventory/local.yml` over this default. Pinning back across a migration is unsafe: they run forward only |
 | `scn_chat_repo_url` | `https://tangled.org/scnorg.tngl.sh/gel.chat` | |
 | `scn_chat_node_version` / `scn_chat_node_sha256` | `v24.21.0` / pinned | Change together |
 | `scn_chat_port` | `3000` | Keep in sync with `corliss_chat_port` |
