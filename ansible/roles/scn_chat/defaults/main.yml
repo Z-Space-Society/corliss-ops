@@ -15,14 +15,14 @@
 # inventory/local.yml over this. The play rebuilds and restarts only when the
 # checkout moved, and the manifest records `git describe` of what was deployed.
 #
-# This default is pinned, not `latest`. gel.chat syncs its spaces through the
-# PDS, and the two must be on the same spaces alpha: each alpha removes the
-# previous one's methods with no aliases. On `latest`, zai-autodeploy would
-# deploy a gel.chat release within a minute of its tag, ahead of the PDS it
-# needs. v0.20.0 is on the 2026-11-12 alpha (built on the 2026-11-17 npm
-# packages, whose spaces lexicons are the same), matching the pds role's
-# pds_revision. Move this pin and pds_revision in the same change (#104).
-scn_chat_version: "v0.20.0"
+# This default follows latest, so zai-autodeploy ships each gel.chat release
+# within a minute of its tag. The one exception: gel.chat syncs its spaces
+# through the PDS, and the two must be on the same spaces alpha, since each
+# alpha removes the previous one's methods with no aliases. Across a PDS bump
+# that changes the alpha, pin this to the matching gel.chat release first, so
+# a release on the new alpha can't deploy ahead of the PDS, and move the two
+# together (v0.17.0 to v0.18.0, #104). Return it to latest once both are on.
+scn_chat_version: "latest"
 scn_chat_repo_url: "https://tangled.org/scnorg.tngl.sh/gel.chat"
 
 # Node.js: pinned LTS tarball with its SHA-256, the tarball + checksum
