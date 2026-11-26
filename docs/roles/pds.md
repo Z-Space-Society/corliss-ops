@@ -128,7 +128,7 @@ that key is unused.
 ## Verify
 
 ```
-ssh pds   # from CT 100
+sudo pct enter $(sudo pct list | awk '$NF=="pds"{print $1}')   # from the Proxmox host
 curl http://127.0.0.1:3000/_alive          # 200 (liveness)
 curl http://127.0.0.1:3000/xrpc/_health    # 200 (readiness — storage OK)
 curl https://pds.<domain>/xrpc/_health     # through the edge
@@ -164,25 +164,25 @@ Two consequences:
 ### Creating an account
 
 `PDS_INVITE_REQUIRED=true`, so every account starts with an invite code, and
-the first code has to come from the admin CLI. From CT 100:
+the first code has to come from the admin CLI. From the Proxmox host:
 
 ```
-ssh pds
-env $(grep -E '^PDS_ADMIN_(PASSWORD|BASE_URL)=' /etc/pds/pds.env) \
-  /opt/pds/bin/atproto-pds-admin invite create
+CT=$(sudo pct list | awk '$NF=="pds"{print $1}'); echo "pds CT: $CT"
+sudo pct exec $CT -- bash -c 'env $(grep -E "^PDS_ADMIN_(PASSWORD|BASE_URL)=" /etc/pds/pds.env) /opt/pds/bin/atproto-pds-admin invite create'
 ```
 
 The binary is not on `PATH`, and it reads the password and target from the
 environment; the `env $(grep ...)` prefix lends it those two values from the
-root-only env file without exporting the rest. Then open
+root-only env file without exporting the rest. Every other
+`atproto-pds-admin` command runs the same way. Then open
 `https://pds.<domain>/account/signin`, follow **Create one**, and enter the
 code. The new account gets a `*.<domain>` handle and can use `/account/signin`
 from then on.
 
 **A code only works on the PDS that minted it.** Staging and production are
 separate servers with separate code tables; a code from one fails on the other
-with `invite code unknown disabled or exhausted`. Check which cluster the shell
-is on before minting (both control nodes show the same prompt).
+with `invite code unknown disabled or exhausted`. Check which Proxmox host the
+shell is on before minting.
 
 The same prefix runs the rest of the CLI: `invite list`, `invite disable`,
 `account info`, `account search`, `account delete`, `takedown apply / lift /
