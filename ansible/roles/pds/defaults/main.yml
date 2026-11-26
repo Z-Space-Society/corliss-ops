@@ -49,6 +49,13 @@
 # Upstream publishes no tag to fetch, so the revision IS the reproducibility
 # pin. A bump drives a re-clone + rebuild (cold cargo build, ~15-30 min, same
 # budget as happyview); re-verify pds_version against the new commit.
+#
+# A bump can also carry operator steps. Before bumping, read the "Projects that
+# run atproto-pds" section of every brief in upstream's docs/migrations/ from
+# the old pin forward, not only the newest: the briefs chain, and a step from
+# an earlier one still applies. The 2026-10-22 one asked for
+# `atproto-pds-admin account publish-kem-key --all`, which went unrun until
+# 2026-11-25. Record what was run, and what it reported, on the bump's issue.
 pds_repo_url: "https://tangled.org/ngerakines.me/atproto-crates"
 pds_version: "0.15.0-rc.8"        # informational; verified against the checkout
 pds_revision: "19b34ef1f1f5d3853bcf0f964066525d4c564961"
