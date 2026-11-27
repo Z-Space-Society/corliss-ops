@@ -8,6 +8,30 @@ it, run the bootstrap, and the stack rebuilds itself from this repo. Every chang
 must preserve that: nothing manual that isn't captured in a `host/` script or
 Ansible.
 
+**A system is version + config + data** (ADR-0014). Given the corliss-ops tag
+it ran, its config and its backed-up data, any system (cluster, service,
+inference node) can be recreated, and nothing else may matter. So:
+
+- **Every decision is config.** Which box, its name, its address, its
+  architecture, which versions it runs: each is saved as data in
+  `inventory/local.yml` or `/root/.zai-secrets`, set through a front end
+  (`scn-config`, `node-config`) with a playbook underneath. Never a hand edit,
+  never a one-off on the box.
+- **Versions are pinned and recorded.** Something that floats (a HEAD clone,
+  an unpinned download) is a gap until it is config. Every manifest and facts
+  record carries `ops_version`.
+- **Backups keep config and data together.** A new piece of runtime state goes
+  into `zai-backup`'s paths in the same change.
+- **What can't be config is a named gap,** written in the role's doc. Never a
+  runbook step.
+
+When adding anything, answer: where is each new decision stored, who sets it,
+and do backups cover it?
+
+**Naming:** new things get corliss-ops names (`node-config`, `ops_version`,
+`/var/lib/corliss-ops`). Existing `zai` names stay until renaming one is cheap
+and contained; the `zai_ops` key in manifests stays because Corliss reads it.
+
 ## Documentation maintenance (IMPORTANT)
 
 The [`docs/`](docs/README.md) tree is the source of truth for how the cluster
@@ -35,9 +59,11 @@ These are settled. Don't silently reverse them; if a change requires it, call it
 out and update the docs.
 
 - **Host scripts from a host clone, then Ansible.** The operator installs git on
-  the Proxmox host and clones this repo to `/root/zai-ops` there, the one manual
-  step. Deliberately not `/opt/zai-ops`, which is CT 100's clone, so the two are
-  never mistaken for each other. `host/bootstrap.sh` (run as root) builds CT 100, the Ansible control
+  the Proxmox host and clones this repo to `/opt/corliss-ops` there, the one
+  manual step (`/root/zai-ops` on hosts cloned before 2026-11-27, such as
+  Heron; nothing reads the location, so both work). Deliberately not
+  `/opt/zai-ops`, which is CT 100's clone, so the two are never mistaken for
+  each other. `host/bootstrap.sh` (run as root) builds CT 100, the Ansible control
   node; everything after is driven by Ansible *from inside CT 100*. Anything else
   that must run on the host itself (`host/import-github-user.sh`,
   `host/install-monitor-agent.sh`) lives beside it
@@ -107,7 +133,8 @@ out and update the docs.
   *suggested* `default_ctid` per service and nothing else reads it; the
   assignment is runtime data in `inventory/local.yml`, written by `assign.yml`.
   `scn-config` (a whiptail menu patterned on raspi-config, plus `nonint`
-  subcommands) is the only front end; its menu runs in the order a new cluster
+  subcommands) is the cluster's front end (inference nodes have their own,
+  `node-config`, below); its menu runs in the order a new cluster
   needs it: control node setup (`site.yml`, then `verify-proxmox.yml`) and
   Cluster Settings come before assignment. Cluster Settings is one screen for
   the plain per-cluster values: the domains (`set-domain.yml`, and
@@ -128,8 +155,21 @@ out and update the docs.
   provisioning strands the old container and its data. `nonint assign-ctid
   --reassign` exists only for correcting a number *before* provisioning. A new
   service gets a `default_ctid` in its tier's range. See ADR-0010.
+- **Inference nodes are registered with `node-config`.** An inference node is
+  any machine with GPUs CT 100 reaches over SSH as the `ansible` user, bare
+  metal or a VM with passed-through cards; corliss-ops never creates the VM or
+  touches passthrough. `node-config` (same shape as scn-config: whiptail menu +
+  `nonint`) is the only writer of a node's config, its entry in
+  `inventory/local.yml` via `enroll-inference-node.yml`. `gpu_vendor` puts it
+  in `nvidia_nodes` or `intel_xpu_nodes`, and a vendor's playbook targets only
+  its group. `node-facts.yml` records what each node runs against its config
+  in `/var/lib/corliss-ops/nodes/<node>/` (timestamped, backed up). The one
+  manual step per node is pasting `node-config nonint print-node-prep`.
+  Production nodes (salmon, orca, GX10, picard) stay hand-built for now; node
+  work is proven on Q02. Kept apart from scn-config because it manages
+  machines over SSH rather than containers over the API. See ADR-0014.
 - **Operator commands live in `bin/`, run in place from git.** Things a human runs
-  by hand on CT 100 (`scn-config`, `zai-backup`) live in the repo's `bin/` (scripts
+  by hand on CT 100 (`scn-config`, `node-config`, `zai-backup`) live in the repo's `bin/` (scripts
   that run on the Proxmox host go in `host/` instead), put on PATH via
   two hooks — `/etc/profile.d/zai-ops.sh` for login/ssh shells, and the same
   snippet sourced from `/etc/bash.bashrc` for the interactive *non-login* shell

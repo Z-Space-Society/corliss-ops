@@ -4,8 +4,8 @@ Builds llama.cpp with CUDA and installs `llama-server` as a systemd service on a
 bare-metal inference node.
 
 - **Source:** [`ansible/roles/llama_server/`](../../ansible/roles/llama_server/)
-- **Applied by:** [`inference.yml`](../../ansible/inference.yml) (`hosts: inference_nodes`, `become: true`)
-- **Target:** a bare-metal node (salmon, orca, …), over SSH as the `ansible` user
+- **Applied by:** [`inference.yml`](../../ansible/inference.yml) (`hosts: nvidia_nodes`, `become: true`)
+- **Target:** an NVIDIA inference node (registered with `node-config`, vendor `nvidia`), over SSH as the `ansible` user
 
 ## Purpose
 
@@ -54,8 +54,9 @@ Defined in [`defaults/main.yml`](../../ansible/roles/llama_server/defaults/main.
 | `llama_extra_args` | `[]` | Extra `llama-server` flags appended verbatim. |
 
 The serving vars are **this-cluster data** — set them per node in the runtime
-inventory (via `enroll-inference-node.yml` or by editing `inventory/local.yml`),
-not in the repo. For example:
+inventory through `enroll-inference-node.yml` (`node-config` registers the
+node; serving vars go in as `-e`), never by editing `inventory/local.yml`,
+and not in the repo. For example:
 
 - **salmon** (2× 1080 Ti, one model split): `llama_extra_args: ["--tensor-split", "1,1"]`,
   plus `--jinja` for Apertus.
@@ -70,7 +71,7 @@ entry on its own continuation line.
 ## Dependencies
 
 - Requires [`nvidia_cuda`](nvidia_cuda.md) to have run (nvcc + a loaded driver).
-- Same node-prep prerequisites as `nvidia_cuda` (the `ansible` user, key, etc.).
+- Same prerequisites as `nvidia_cuda` (Prepare a node, registered as `nvidia`).
 
 ## Verify
 
@@ -84,6 +85,8 @@ ssh ansible@<node> 'sudo systemctl start llama-server && curl -s localhost:8080/
 ## Notes
 
 - Model files are **not** downloaded by the role (large; chosen per node). Stage
-  the GGUF named by `llama_model_file`, then start the service.
+  the GGUF named by `llama_model_file`, then start the service. Two known gaps
+  ([ADR-0014](../decisions/0014-node-config.md)): the hand-staged GGUF, and the
+  llama.cpp clone tracking HEAD rather than a recorded ref.
 - Pascal cards (1080 Ti) want K-quants, not IQ-quants — see the vault's Models
   note. That's a model-selection concern, not a role setting.

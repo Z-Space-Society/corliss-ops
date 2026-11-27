@@ -1,74 +1,115 @@
 ---
-# Record a bare-metal inference node into the runtime inventory. RECORDS ONLY —
-# it does not configure anything; run inference.yml afterwards to apply the roles.
+# Record an inference node in the runtime inventory, or drop it. RECORDS ONLY:
+# it does not touch the node. The front end is node-config (Register a node,
+# Remove a node); this is the playbook underneath it.
 #
-#   ansible-playbook enroll-inference-node.yml -e "name=salmon ansible_host=192.168.6.63"
-#   ansible-playbook inference.yml --limit salmon
+#   ansible-playbook enroll-inference-node.yml \
+#     -e "name=q02b ansible_host=192.168.6.80 gpu_vendor=nvidia gpu_count=2"
+#   ansible-playbook enroll-inference-node.yml -e "name=q02b state=absent"
 #
-# Why a separate playbook instead of editing inventory by hand: node names and
-# IPs are THIS-cluster specifics, not generic repo data. They go in the
-# git-ignored runtime inventory (inventory/local.yml) on the control node, which
-# is backed up like the vault — never committed. The repo stays generic.
+# The node's entry is its config: the decisions someone made about it (which
+# address, which GPU vendor and how many cards, what it serves). Those are
+# this-cluster data, so they go in the git-ignored runtime inventory
+# (inventory/local.yml) on the control node, which zai-backup keeps with the
+# vault. The repo stays generic. See ADR-0014.
 #
-# Model vars are optional; omit them to take the llama_server role defaults, or
-# pass them here (JSON form is easiest for lists), e.g.:
-#   -e '{"name":"salmon","ansible_host":"192.168.6.63",
+# gpu_vendor places the node in a child group of inference_nodes (nvidia_nodes
+# or intel_xpu_nodes), and that group decides which driver stack it gets.
+# Registering again with a different vendor moves it. gpu_count is what the
+# health check expects to see.
+#
+# Serving vars are optional; omit them to take the llama_server role defaults,
+# or pass them here (JSON form is easiest for lists), e.g.:
+#   -e '{"name":"q02b","ansible_host":"192.168.6.80","gpu_vendor":"nvidia",
 #        "llama_model_file":"Apertus-8B-Instruct-2509-Q5_K_M.gguf",
 #        "llama_extra_args":["--jinja","--tensor-split","1,1"]}'
-# Re-enrolling a node updates its entry in place (idempotent merge-and-rewrite).
+# Registering again merges into the existing entry, so a key not passed keeps
+# its recorded value.
 
-- name: Enroll an inference node into the runtime inventory
+- name: Record an inference node in the runtime inventory
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     runtime_inventory: "{{ playbook_dir }}/inventory/local.yml"
-    node_user: "{{ ansible_user | default('ansible') }}"
+    node_state: "{{ state | default('present') }}"
+    vendor_groups:
+      nvidia: nvidia_nodes
+      intel: intel_xpu_nodes
   tasks:
-    - name: Require name and ansible_host
+    - name: Require a valid name and state
       ansible.builtin.assert:
         that:
-          - name is defined and (name | string | length) > 0
-          - ansible_host is defined and (ansible_host | string | length) > 0
+          - name is defined
+          - name | string is match('^[a-z0-9][a-z0-9-]*$')
+          - node_state in ['present', 'absent']
         fail_msg: >-
-          Pass at least name and ansible_host, e.g.
-          -e "name=salmon ansible_host=192.168.6.63"
+          Pass name (lowercase letters, digits and hyphens) and optionally
+          state=present|absent, e.g. -e "name=q02b state=absent"
+        quiet: true
 
-    # errors='ignore' → empty string when the file doesn't exist yet; 'or {}'
-    # turns that (and an empty/whitespace file) into an empty mapping to merge into.
+    - name: Require an address and a known vendor to register
+      ansible.builtin.assert:
+        that:
+          - ansible_host is defined and (ansible_host | string | length) > 0
+          - gpu_vendor is defined and gpu_vendor in vendor_groups
+          - gpu_count is not defined or (gpu_count | string is match('^[0-9]+$'))
+        fail_msg: >-
+          Pass ansible_host and gpu_vendor ({{ vendor_groups.keys() | join(' or ') }}),
+          and gpu_count as a whole number if given, e.g.
+          -e "name=q02b ansible_host=192.168.6.80 gpu_vendor=nvidia gpu_count=2"
+        quiet: true
+      when: node_state == 'present'
+
+    # errors='ignore' gives an empty string when the file doesn't exist yet;
+    # 'or {}' turns that (and an empty file) into an empty mapping.
     - name: Load the existing runtime inventory (empty if absent)
       ansible.builtin.set_fact:
         runtime_data: "{{ (lookup('file', runtime_inventory, errors='ignore') | from_yaml) or {} }}"
 
-    # Only the keys the operator actually supplied are stored, so unset model
-    # vars fall through to the llama_server role defaults rather than being pinned.
-    - name: Assemble this node's inventory entry
+    # The filters (filter_plugins/inference_nodes.py) keep a node in exactly
+    # one vendor group, moving it out of wherever it was.
+    - name: Read the node's recorded entry
+      ansible.builtin.set_fact:
+        prior_entry: "{{ runtime_data | inference_node_entry(name) }}"
+
+    # Only keys the operator supplied change, so a value not passed keeps what
+    # was recorded, and unset serving vars fall through to the role defaults.
+    - name: Assemble the node's entry
       ansible.builtin.set_fact:
         node_entry: >-
           {{
-            {'ansible_host': ansible_host, 'ansible_user': node_user}
+            prior_entry
+            | combine({'ansible_host': ansible_host,
+                       'ansible_user': ansible_user | default(prior_entry.ansible_user | default('ansible')),
+                       'gpu_vendor': gpu_vendor})
+            | combine({'gpu_count': gpu_count | int} if gpu_count is defined else {})
             | combine({'llama_model_file': llama_model_file} if llama_model_file is defined else {})
             | combine({'llama_port': llama_port | int} if llama_port is defined else {})
             | combine({'llama_extra_args': llama_extra_args} if llama_extra_args is defined else {})
           }}
+      when: node_state == 'present'
 
-    - name: Merge this node into the inference_nodes group
+    - name: Place the node in its vendor group
       ansible.builtin.set_fact:
-        merged_inventory: >-
-          {{
-            runtime_data
-            | combine({'all': {'children': {'inference_nodes': {'hosts': {name: node_entry}}}}},
-                      recursive=True)
-          }}
+        new_data: "{{ runtime_data | inference_node_set(name, vendor_groups[gpu_vendor], node_entry) }}"
+      when: node_state == 'present'
+
+    - name: Drop the node
+      ansible.builtin.set_fact:
+        new_data: "{{ runtime_data | inference_node_drop(name) }}"
+      when: node_state == 'absent'
 
     - name: Write the runtime inventory
       ansible.builtin.copy:
         dest: "{{ runtime_inventory }}"
-        content: "{{ merged_inventory | to_nice_yaml(indent=2) }}"
+        content: "{{ new_data | to_nice_yaml(indent=2) }}"
         mode: "0644"
 
     - name: Report
       ansible.builtin.debug:
-        msg:
-          - "Recorded '{{ name }}' ({{ ansible_host }}) in {{ runtime_inventory }}."
-          - "Next: ansible-playbook inference.yml --limit {{ name }}"
+        msg: >-
+          {{ ('Recorded ' ~ name ~ ' (' ~ ansible_host ~ ') in ' ~ vendor_groups[gpu_vendor])
+             if node_state == 'present'
+             else ('Dropped ' ~ name ~ ' from the runtime inventory' if prior_entry
+                   else name ~ ' was not recorded; nothing to drop') }}

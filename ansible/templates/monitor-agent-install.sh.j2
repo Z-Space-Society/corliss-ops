@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs the Beszel monitoring agent on {{ machine }}. Generated on CT 100 by
-# monitor-agent-install.yml, zai-ops {{ zai_ops_revision | default('unknown') }}.
+# monitor-agent-install.yml, corliss-ops {{ ops_version | default('unknown') }}.
 # It holds the agent token: run it as root, then delete it.
 MONITOR_AGENT_PRESET=1
 MONITOR_AGENT_HUB_URL={{ ('https://' ~ beszel_host) | quote }}

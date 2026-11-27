@@ -40,10 +40,10 @@ Base Proxmox has no git, so installing it is the one manual step (see
 
 ```bash
 apt-get update; apt-get install -y git   # 401s from the enterprise repo are expected; step 1 disables it
-git clone https://github.com/Z-Space-Society/zai-ops.git /root/zai-ops
-/root/zai-ops/host/bootstrap.sh
+git clone https://github.com/Z-Space-Society/corliss-ops.git /opt/corliss-ops
+/opt/corliss-ops/host/bootstrap.sh
 # override the CT ID (default 100):
-# /root/zai-ops/host/bootstrap.sh 199
+# /opt/corliss-ops/host/bootstrap.sh 199
 ```
 
 What it does, in order (each phase prints a numbered banner):
@@ -123,9 +123,10 @@ ansible-playbook provision.yml --limit proxy    # or provision one by hand
   first-user endpoint answered 404 at the edge.
 - **CT 101** (object-store, Garage) is internal-only too — it's the restic
   backend the [`backup`](#backups) job writes to, not a user-facing service.
-- **Inference nodes** (salmon, orca, …) are **bare-metal**, *outside* the Proxmox
-  host — they run `llama-server` only, behind the gateway, and are configured by
-  CT 100 over SSH. See [Inference nodes](#inference-nodes).
+- **Inference nodes** are machines with GPUs that CT 100 reaches over SSH (bare
+  metal, or a VM with passed-through cards). They run `llama-server` only,
+  behind the gateway, and are registered with `node-config`. See
+  [Inference nodes](#inference-nodes).
 
 ---
 
@@ -205,7 +206,7 @@ inventory is loaded as a directory, so that file merges with the committed
 | Membership-registry identity | `scn-config`, [Cluster Settings](#cluster-settings) |
 | `proxmox_node_name` | `bootstrap.sh` (from the host's `hostname`); corrected in `scn-config`, [Cluster Settings](#cluster-settings) |
 | `caddy_tls_mode` | `scn-config`, Set TLS ([Cluster TLS mode](#cluster-tls-mode)) |
-| Inference-node roster | [`enroll-inference-node.yml`](#inference-nodes) |
+| Inference nodes (address, GPU vendor and count, serving config) | `node-config`, Register ([Inference nodes](#inference-nodes)) |
 
 What stays committed is what every cluster shares: the `10.1.1.0/24` net, the
 `10.1.1.{ctid}` addressing convention, and each service's create specs and
@@ -331,42 +332,78 @@ menu offers to run that once a mode is saved, and a scripted change needs
 
 ## Inference nodes
 
-The inference nodes (salmon, orca, …) are **bare-metal Debian 13 machines** with
-NVIDIA GPUs, sitting on the LAN/tailnet *outside* the Proxmox host. They run
-`llama-server` only — no double duty, which is the vault's ADR-001 — and are
-reached for inference by the LiteLLM gateway. They serve the chat (and
-GPU-class) models; the *baseline embedding* model is **not** one of them — it runs
-as an always-on CPU `llama-server` co-located in the `litellm` CT (see
-[`litellm`](roles/litellm.md)), so embeddings survive any inference node being down.
+An inference node is any machine with GPUs that CT 100 reaches over SSH: bare
+metal on the LAN, or a VM with passed-through cards. corliss-ops treats the two
+the same and manages neither the hardware nor the VM: creating a VM, PCI
+passthrough and the host's IOMMU setup sit outside it, and a VM is simply a
+machine at an address. The nodes run `llama-server` only (no double duty, the
+vault's ADR-001) and are reached for inference by the LiteLLM gateway. The
+*baseline embedding* model is **not** on them: it runs as an always-on CPU
+`llama-server` in the `litellm` CT (see [`litellm`](roles/litellm.md)), so
+embeddings survive any node being down.
 
-CT 100 configures them over SSH as a dedicated **`ansible` user** (NOPASSWD
-sudo), using its root ed25519 key. Two roles apply: [`nvidia_cuda`](roles/nvidia_cuda.md)
-(driver + CUDA) then [`llama_server`](roles/llama_server.md) (build llama.cpp,
-install the unit, enabled-not-started until a GGUF is staged).
+The production nodes (salmon, orca, GX10, picard) are still built by hand and
+are not registered. Node work is proven on the Q02 QuadBox first.
 
-Operator flow, from inside CT 100:
+### Version, config, data
+
+A node is recreated from three things, as everything in corliss-ops is
+([ADR-0014](decisions/0014-node-config.md)):
+
+- **Version**: the corliss-ops tag CT 100 is on (`ops_version`).
+- **Config**: the node's entry in `inventory/local.yml`. `node-config` is the
+  only thing that writes it; nothing is edited by hand on CT 100 or the node.
+- **Data**: the facts history in `/var/lib/corliss-ops/nodes/` on CT 100,
+  backed up with the config by `zai-backup`. Model weights are not backed up;
+  they are re-fetched from what the config records.
+
+| Config field | Set by | Meaning |
+| ------------ | ------ | ------- |
+| node name | node-config, Register | The inventory name; the key for its facts records. |
+| `ansible_host` | node-config, Register | Whatever reaches the node: a LAN IP, a DNS name, a Tailscale 100.x. |
+| `ansible_user` | enroll (always `ansible`) | The user Prepare creates. |
+| `gpu_vendor` | node-config, Register | `nvidia` or `intel`. Puts the node in `nvidia_nodes` or `intel_xpu_nodes`, which decides its driver stack. |
+| `gpu_count` | node-config, Register | How many GPUs the node should show. |
+| `llama_model_file`, `llama_port`, `llama_extra_args` | `enroll-inference-node.yml -e` | Serving config for [`llama_server`](roles/llama_server.md). |
+
+Anything a node needs that cannot be written as one of these is a **gap**: it
+is named in the role's doc, not handed over as a runbook step. Known gaps
+today: Secure Boot must be off in firmware (NVIDIA), llama.cpp builds from
+HEAD rather than a recorded ref, and the GGUF is staged by hand.
+
+### Operator flow
+
+From inside CT 100, with `node-config` (menu, or `nonint` as below):
 
 ```bash
-ansible-playbook enroll-inference-node.yml -e "name=salmon ansible_host=192.168.6.63"
-ansible-playbook inference.yml --limit salmon
+node-config nonint print-node-prep    # paste the output on the new node, as root or a sudo user
+node-config nonint register q02b 192.168.6.80 nvidia 2   # record it, check SSH, record facts
+node-config nonint show-nodes         # each node's config and its last facts
+ansible-playbook inference.yml --limit q02b              # NVIDIA nodes: nvidia_cuda + llama_server
 ```
 
-`ansible_host` is whatever reaches the node — a LAN IP today, a Tailscale 100.x
-later; the repo bakes in neither.
+**Prepare** prints one block, with CT 100's root public key filled in, that
+creates the `ansible` user with NOPASSWD sudo and installs the key. It is
+idempotent and works the same on Debian and Ubuntu. **Register** writes the
+config through [`enroll-inference-node.yml`](../ansible/enroll-inference-node.yml),
+then runs [`node-facts.yml`](../ansible/node-facts.yml) on that node: an
+unreachable node shows up in its PLAY RECAP. Registering again updates the
+entry in place, and a different vendor moves it. **Remove** drops the entry and
+leaves the node and its facts history alone.
+
+A facts record holds the node's config, `ops_version`, OS, kernel, held
+packages, the GPUs `lspci` sees (true before any driver is installed) and the
+driver's own view (`nvidia-smi` or `xpu-smi`). Each run writes a timestamped
+file and `latest.json`, so two runs can be diffed.
 
 Each node can report to the cluster's monitor through an agent installed by a
 script CT 100 prints (`scn-config nonint print-monitor-agent-install <name>`);
 see [Using the system monitor](monitoring.md#adding-a-machine).
 
-**Node prep (manual, per node), before the first run:**
-
-- **Secure Boot disabled** in BIOS (unsigned NVIDIA modules won't load otherwise;
-  the role asserts it).
-- An **`ansible` user with NOPASSWD sudo**, with **CT 100's root public key** in
-  its `authorized_keys`.
-- On Trixie, `systemd-networkd` needs a `.network` file to DHCP (e.g.
-  `/etc/systemd/network/20-wired.network` with `DHCP=yes`) so the node is
-  reachable at its enrolled address.
+On Debian 13, `systemd-networkd` needs a `.network` file to DHCP (e.g.
+`/etc/systemd/network/20-wired.network` with `DHCP=yes`) so the node is
+reachable at its registered address. That is part of the OS install, before
+Prepare.
 
 ---
 
@@ -394,8 +431,9 @@ see [Using the system monitor](monitoring.md#adding-a-machine).
 | `ct-health.yml`       | CT 100 → API/SSH | Fail if the control node or a service CT has a failed systemd unit, or is running without `ct_features`. Clears the one known stale failure first (`wtmpdb-rotate.timer`, see [Known gotchas](gotchas.md)). `provision.yml` ends with it, so a `--limit` run checks that CT and a deploy can fail on it; run it alone with no limit to check them all |
 | `ct-status.yml`       | CT 100 (local) | Read-only: list the containers on the node, so `scn-config` can mark each service as new or existing |
 | `admins.yml`          | corliss (SSH) | Show, add or remove a cluster admin by running Corliss's `list_admins` / `make_admin` on its CT, or re-apply the roster to Corliss's own copy (`sync_admins`, `admin_action=apply`). The roster record is the authority; nothing is stored in zai-ops (the engine behind `scn-config`'s Cluster Admins) |
-| `enroll-inference-node.yml` | CT 100 (local) | Record a bare-metal inference node in the runtime inventory (records only) |
-| `inference.yml`       | CT 100 → SSH   | Configure inference nodes (`nvidia_cuda` + `llama_server`) |
+| `enroll-inference-node.yml` | CT 100 (local) | Record an inference node's config in the runtime inventory, in its vendor group, or drop it (`-e state=absent`). Records only (the engine behind `node-config`'s Register and Remove; [ADR-0014](decisions/0014-node-config.md)) |
+| `node-facts.yml`      | CT 100 → SSH   | Read-only: record each inference node's OS, kernel, held packages, GPUs and driver view against its config and `ops_version`, in `/var/lib/corliss-ops/nodes/<node>/` (the engine behind `node-config`'s Register and Collect Facts) |
+| `inference.yml`       | CT 100 → SSH   | Configure the NVIDIA inference nodes (`nvidia_nodes`: `nvidia_cuda` + `llama_server`) |
 | `add-github-user.yml` | CT 100 (local) + SSH | Create a human admin account from GitHub keys, with sudo, on CT 100 + inference nodes |
 | `backup.yml`          | CT 100 (local) | Install restic + a daily timer backing up control-node runtime state to the object store |
 
@@ -421,6 +459,8 @@ PATH when the control node is configured. The convention:
 | ------- | ---- | --------- |
 | `scn-config` | Menu-driven cluster configuration, in the order a new cluster needs it: configure the control node and check the API token, record the [cluster settings](#cluster-settings) (Proxmox host name, domain, membership registry, scn-chat admin key), assign each service its CTID ([Service CTID assignment](#service-ctid-assignment)), provision the assigned services in dependency order, manage the cluster's admins, set the outbound mail relay, set the [TLS mode](#cluster-tls-mode), rotate signing keys, choose which release scn-chat and Corliss deploy, and install the monitoring agents | [`assign.yml`](#playbooks), [`provision.yml`](#playbooks), [`admins.yml`](#playbooks), [`set-smtp.yml`](#playbooks), [`set-scn-chat-key.yml`](#playbooks), [`rotate-key.yml`](#playbooks), [`set-version.yml`](#playbooks), [`monitor-agent.yml`](#playbooks), and `site.yml`, `verify-proxmox.yml`, `set-domain.yml`, `set-handle-domain.yml`, `set-registry.yml`, `set-node.yml`, `set-tls.yml` |
 | `scn-config nonint <command>` | The same, scripted: `setup`; `show-proxmox-host`, `set-proxmox-host <name>`; `show-domain`, `set-domain <domain>`, `set-handle-domain <domain> [--no-cluster-domain]`, `clear-handle-domain`; `show-registry`, `set-registry <client_key\|service_did> <value>`; `show-ctid`, `assign-ctid <service> <ctid>`, `assign-ctid-defaults`; `show-admins`, `add-admin <handle-or-did> [--admit] [--tier T]`, `remove-admin <handle-or-did>`, `apply-admins [corliss] [pds] [beszel]` (gives the roster as it stands to everything that keeps a copy; all of them when none is named); `show-smtp`, `set-smtp` (URL on stdin), `clear-smtp`; `show-scn-chat-key`, `set-scn-chat-key` (key on stdin), `clear-scn-chat-key`; `show-tls`, `set-tls <acme\|none> [email]`; `set-alert-email <address>`, `clear-alert-email`; `apply-monitor-agents [host…]` (every host when none is named), `print-monitor-agent-install <machine>` (a root install script for an inference node, on stdout) | the same playbooks |
+| `node-config` | Menu-driven inference node configuration: print the block that prepares a new node, register a node (name, address, GPU vendor and count) and record its facts, list each node's config against its last facts, collect facts again, remove a node. See [Inference nodes](#inference-nodes) and [ADR-0014](decisions/0014-node-config.md) | [`enroll-inference-node.yml`](#playbooks), [`node-facts.yml`](#playbooks) |
+| `node-config nonint <command>` | The same, scripted: `print-node-prep`; `register <name> <address> <nvidia\|intel> [gpu_count]`; `show-nodes`; `collect-facts [node…]` (every node when none is named); `remove <name>` | the same playbooks |
 | `zai-backup [run]` | Run the control-node backup (also the timer's `ExecStart`) | restic |
 | `zai-backup <restic subcmd>` | Ad-hoc query/restore against the repo (`snapshots`, `check`, `restore …`) | restic |
 | `zai-autodeploy run` | Provision each app set to `latest` whose newest release tag isn't deployed yet (also the timer's `ExecStart`, every minute). See [ADR-0013](decisions/0013-autodeploy-on-a-timer.md) | [`set-version.yml`](#playbooks), [`provision.yml`](#playbooks) |
@@ -435,7 +475,8 @@ command. Only control-node operator commands belong in `bin/`.
 ### Host scripts
 
 Scripts that must run on the Proxmox host itself live in [`host/`](../host/), run
-as root by path from the host's clone at `/root/zai-ops`. They are not on PATH.
+as root by path from the host's clone at `/opt/corliss-ops` (`/root/zai-ops` on
+a host cloned before 2026-11-27, such as Heron; both work). They are not on PATH.
 The split from `bin/` is where the script runs: `bin/` drives Ansible from CT 100,
 while `host/` does what CT 100 can't reach. CT 100 talks to Proxmox only through
 the API token and has no SSH path to the host, so anything needing host accounts,
@@ -457,8 +498,8 @@ the API token and has no SSH path to the host, so anything needing host accounts
 | ------------------------------------------ | ---------- | ------------------------------------------------------- |
 | [`control_node`](roles/control_node.md)    | CT 100     | Base config for the Ansible control node                |
 | [`proxy`](roles/proxy.md)                  | `proxy`    | Caddy reverse proxy — the LAN-facing edge; single apt package, git-tracked routes |
-| [`nvidia_cuda`](roles/nvidia_cuda.md)      | inference nodes | NVIDIA driver + CUDA toolkit (bare-metal Debian 13) |
-| [`llama_server`](roles/llama_server.md)    | inference nodes | Build llama.cpp (CUDA) + install the `llama-server` unit |
+| [`nvidia_cuda`](roles/nvidia_cuda.md)      | `nvidia_nodes` | NVIDIA driver + CUDA toolkit (Debian 13) |
+| [`llama_server`](roles/llama_server.md)    | `nvidia_nodes` | Build llama.cpp (CUDA) + install the `llama-server` unit |
 | [`github_user`](roles/github_user.md)      | CT 100 + inference nodes | Create a human admin account from GitHub public keys, with sudo. For the Proxmox host itself, see [Host scripts](#host-scripts) |
 | [`object_store`](roles/object_store.md)    | `object-store` | Single-node Garage (S3-compatible) — the on-box backup target |
 | [`postgres`](roles/postgres.md)            | `postgres` | PostgreSQL 17 (Debian-native) — the internal database server |

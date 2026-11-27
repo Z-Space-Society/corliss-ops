@@ -4,8 +4,8 @@ Installs the NVIDIA driver and CUDA toolkit on a bare-metal inference node
 (Debian 13 / Trixie).
 
 - **Source:** [`ansible/roles/nvidia_cuda/`](../../ansible/roles/nvidia_cuda/)
-- **Applied by:** [`inference.yml`](../../ansible/inference.yml) (`hosts: inference_nodes`, `become: true`)
-- **Target:** a bare-metal node (salmon, orca, …), over SSH as the `ansible` user
+- **Applied by:** [`inference.yml`](../../ansible/inference.yml) (`hosts: nvidia_nodes`, `become: true`)
+- **Target:** an NVIDIA inference node (registered with `node-config`, vendor `nvidia`), over SSH as the `ansible` user
 
 ## Purpose
 
@@ -48,13 +48,17 @@ Defined in [`defaults/main.yml`](../../ansible/roles/nvidia_cuda/defaults/main.y
 ## Dependencies
 
 - Runs before [`llama_server`](llama_server.md) in `inference.yml`.
-- **Node prep (manual, per node) — prerequisites this role does not do:**
-  - **Secure Boot disabled** in BIOS (the role asserts it; it can't change it).
-  - An **`ansible` user with NOPASSWD sudo**, and **CT 100's root ed25519 public
-    key** in that user's `authorized_keys`, so the control node can reach it.
+- **Before the first run:**
+  - The **`ansible` user, its NOPASSWD sudo and CT 100's key** come from
+    `node-config`'s Prepare a node, and the node is registered with vendor
+    `nvidia` ([Inference nodes](../README.md#inference-nodes)).
+  - **Secure Boot disabled** in firmware (the role asserts it; it can't change
+    it). This is a known gap in the sense of
+    [ADR-0014](../decisions/0014-node-config.md): a firmware setting no config
+    can carry. In a Proxmox VM it is the OVMF setting, not the board's.
   - On Trixie, `systemd-networkd` needs a `.network` file (e.g.
-    `/etc/systemd/network/20-wired.network` with `DHCP=yes`) to get an address —
-    the node must already be reachable at the `ansible_host` it was enrolled with.
+    `/etc/systemd/network/20-wired.network` with `DHCP=yes`) to get an address,
+    so the node is reachable at its registered address.
 
 ## Verify
 

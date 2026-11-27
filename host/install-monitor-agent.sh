@@ -5,8 +5,8 @@
 #
 # On the Proxmox host, from the host's clone of zai-ops:
 #
-#   /root/zai-ops/host/install-monitor-agent.sh        # control node is CT 100
-#   /root/zai-ops/host/install-monitor-agent.sh 199    # or another CTID
+#   /opt/corliss-ops/host/install-monitor-agent.sh        # control node is CT 100
+#   /opt/corliss-ops/host/install-monitor-agent.sh 199    # or another CTID
 #
 # On an inference node, run the copy CT 100 prints instead, which carries its
 # inputs in a header (MONITOR_AGENT_PRESET=1, below):

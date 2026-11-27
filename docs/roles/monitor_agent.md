@@ -113,7 +113,7 @@ The host isn't an Ansible target, so it runs
 own clone (step 6):
 
 ```sh
-/root/zai-ops/host/install-monitor-agent.sh [control-ctid]   # default 100
+/opt/corliss-ops/host/install-monitor-agent.sh [control-ctid]   # default 100
 ```
 
 - **It reads CT 100's values as data and never runs anything CT 100 produces.**

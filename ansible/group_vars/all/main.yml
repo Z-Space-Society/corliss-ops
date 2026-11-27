@@ -75,12 +75,13 @@ manifest_writer_secret_key: "{{ lookup('ansible.builtin.password', _zai_secrets_
 manifest_reader_access_key: "GK{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/manifest_reader_access_key chars=digits,abcdef length=24') }}"
 manifest_reader_secret_key: "{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/manifest_reader_secret_key chars=digits,abcdef length=64') }}"
 
-# The zai-ops revision a manifest records: the control node's own checkout
-# (/opt/zai-ops on CT 100), read at the moment the play runs. --dirty is the
+# The corliss-ops revision a service manifest or a node facts record carries:
+# the control node's own checkout (/opt/zai-ops on CT 100), read at the moment
+# the play runs. --dirty is the
 # point, not decoration: a "-dirty" suffix means the blueprint was hand-edited on
 # CT 100, which breaks "the artifact is the repo", and /systems/ should say so.
 # --always keeps it a value (a bare sha) even on a clone with no tags fetched.
-zai_ops_revision: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ playbook_dir ~ ' describe --tags --always --dirty') }}"
+ops_version: "{{ lookup('ansible.builtin.pipe', 'git -C ' ~ playbook_dir ~ ' describe --tags --always --dirty') }}"
 
 # LiteLLM proxy secrets. master_key is the proxy's admin/root API key (the `sk-…`
 # clients and the admin UI authenticate with); db_password is the password for the

@@ -1,0 +1,128 @@
+---
+# Record what an inference node is actually running, next to the config it
+# was registered with. The front end is node-config (it runs this after
+# Register a node, and on its own as Collect facts).
+#
+#   ansible-playbook node-facts.yml               # every registered node
+#   ansible-playbook node-facts.yml --limit q02a  # one node
+#
+# Each run writes the record to the control node as
+# /var/lib/corliss-ops/nodes/<node>/<UTC time>.json and copies it to
+# latest.json there. The timestamped files are kept, so two runs can be diffed,
+# and zai-backup takes the directory along with the config. A record says:
+# this node, on this date, had this config (its inventory entry), this
+# corliss-ops version, this kernel and these packages held, and these GPUs.
+# See ADR-0014.
+#
+# Read-only on the node: every probe is changed_when false and failed_when
+# false, so a missing tool (no driver yet, no pciutils) is recorded as missing
+# rather than failing the run. A node that can't be reached over SSH shows as
+# unreachable in the PLAY RECAP; that is the SSH check for Register.
+
+- name: Record inference node facts
+  hosts: inference_nodes
+  remote_user: ansible
+  become: true
+  gather_facts: true
+  vars:
+    facts_dir: /var/lib/corliss-ops/nodes
+    # The inventory keys that are this node's config. Anything else in
+    # hostvars is a blueprint default or Ansible's own.
+    node_config_keys:
+      - ansible_host
+      - ansible_user
+      - gpu_vendor
+      - gpu_count
+      - llama_model_file
+      - llama_port
+      - llama_extra_args
+  tasks:
+    - name: Read held packages
+      ansible.builtin.command: apt-mark showhold
+      register: held
+      changed_when: false
+      failed_when: false
+
+    # lspci sees passed-through cards before any driver is installed, so this
+    # is the inventory of what the node has, not what a driver claims.
+    - name: List GPUs on the PCI bus
+      ansible.builtin.shell: |
+        set -o pipefail
+        lspci -nn | grep -E 'VGA compatible controller|3D controller|Display controller'
+      args:
+        executable: /bin/bash
+      register: pci_gpus
+      changed_when: false
+      failed_when: false
+
+    - name: Read the NVIDIA driver's view
+      ansible.builtin.command: >-
+        nvidia-smi --query-gpu=index,name,driver_version,memory.total
+        --format=csv,noheader
+      register: nvidia_smi
+      changed_when: false
+      failed_when: false
+      when: gpu_vendor | default('') == 'nvidia'
+
+    - name: Read the Intel XPU runtime's view
+      ansible.builtin.command: xpu-smi discovery
+      register: xpu_smi
+      changed_when: false
+      failed_when: false
+      when: gpu_vendor | default('') == 'intel'
+
+    - name: Assemble the record
+      ansible.builtin.set_fact:
+        node_record:
+          node: "{{ inventory_hostname }}"
+          collected_at: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
+          ops_version: "{{ ops_version }}"
+          config: "{{ hostvars[inventory_hostname] | dict2items | selectattr('key', 'in', node_config_keys) | items2dict }}"
+          os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+          kernel: "{{ ansible_kernel }}"
+          held: "{{ held.stdout_lines | default([]) }}"
+          pci_gpus: "{{ pci_gpus.stdout_lines | default([]) }}"
+          driver: "{{ _driver }}"
+      vars:
+        _driver: >-
+          {{
+            {'tool': 'nvidia-smi',
+             'ok': nvidia_smi.rc | default(1) == 0,
+             'lines': nvidia_smi.stdout_lines | default([]) if nvidia_smi.rc | default(1) == 0
+                      else [nvidia_smi.msg | default(nvidia_smi.stderr | default('not run'))]}
+            if gpu_vendor | default('') == 'nvidia' else
+            {'tool': 'xpu-smi',
+             'ok': xpu_smi.rc | default(1) == 0,
+             'lines': xpu_smi.stdout_lines | default([]) if xpu_smi.rc | default(1) == 0
+                      else [xpu_smi.msg | default(xpu_smi.stderr | default('not run'))]}
+            if gpu_vendor | default('') == 'intel' else
+            {'tool': none, 'ok': false, 'lines': ['no gpu_vendor recorded']}
+          }}
+
+    - name: Create the node's facts directory on the control node
+      ansible.builtin.file:
+        path: "{{ facts_dir }}/{{ inventory_hostname }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+
+    - name: Write the record
+      ansible.builtin.copy:
+        dest: "{{ facts_dir }}/{{ inventory_hostname }}/{{ item }}"
+        content: "{{ node_record | to_nice_json(indent=2) }}\n"
+        mode: "0644"
+      loop:
+        - "{{ node_record.collected_at | replace('-', '') | replace(':', '') }}.json"
+        - latest.json
+      delegate_to: localhost
+      become: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg:
+          - "{{ node_record.os }}, kernel {{ node_record.kernel }}, corliss-ops {{ node_record.ops_version }}"
+          - "{{ node_record.pci_gpus | length }} GPU(s) on the PCI bus{{ (', ' ~ gpu_count ~ ' expected') if gpu_count is defined else '' }}"
+          - "{{ node_record.driver.tool }}: {{ 'answers' if node_record.driver.ok else 'not answering (no driver yet?)' }}"
+          - "Held: {{ node_record.held | join(', ') if node_record.held else 'nothing' }}"
+          - "Written to {{ facts_dir }}/{{ inventory_hostname }}/latest.json"

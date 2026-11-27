@@ -114,7 +114,7 @@ From [`group_vars/all/main.yml`](../../ansible/group_vars/all/main.yml):
 | -------- | ------- |
 | `manifest_bucket` | `zai-manifests`. Shared with `object_store` (creates it) and `corliss` (reads it). |
 | `manifest_writer_access_key` / `manifest_writer_secret_key` | Generated under `/root/.zai-secrets`. Read and write on `zai-manifests` only. |
-| `zai_ops_revision` | `git describe --tags --always --dirty` of `/opt/zai-ops`. `-dirty` means the blueprint was hand-edited on CT 100. |
+| `ops_version` | `git describe --tags --always --dirty` of `/opt/zai-ops`. `-dirty` means the blueprint was hand-edited on CT 100. |
 
 ## Dependencies
 
