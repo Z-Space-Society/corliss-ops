@@ -12,6 +12,8 @@
 #   - the vendor's driver tool answers and sees that many
 #   - no systemd unit has failed
 #   - its serving unit, once installed, is active and /health answers 200
+#   - its driver stack is at the versions its vendor group pins
+#     (gpu_stack_pins, group_vars/intel_xpu_nodes.yml), where there are pins
 # The result goes to /var/lib/corliss-ops/nodes/<node>/health.json beside the
 # facts, ends with one Summary line per node, and a node that fails a check
 # fails the run (failed=1 in the PLAY RECAP). See ADR-0014.
@@ -50,9 +52,23 @@
               {{ (node_record.serving.unit ~ ' ' ~ node_record.serving.active ~ ', /health '
                   ~ (node_record.serving.health | default('no answer', true)))
                  if node_record.serving.loaded else 'no serving unit installed yet' }}
+          - check: stack matches the pins
+            ok: "{{ _drift | from_json | length == 0 }}"
+            detail: >-
+              {{ ('none set for ' ~ (gpu_vendor | default('?'))) if not _pins
+                 else (_pins | length ~ ' pinned, all match') if not (_drift | from_json)
+                 else (_drift | from_json | join(', ')) }}
       vars:
         _want: "{{ gpu_count | int if gpu_count is defined else none }}"
         _pci: "{{ node_record.pci_gpus | length }}"
+        _pins: "{{ gpu_stack_pins | default({}) }}"
+        _drift: >-
+          {%- set out = [] -%}
+          {%- for name, pinned in _pins.items() -%}
+          {%- set got = (node_record.packages | default({})).get(name) or 'not installed' -%}
+          {%- if got != pinned -%}{%- set _ = out.append(name ~ ' ' ~ got ~ ' (pinned ' ~ pinned ~ ')') -%}{%- endif -%}
+          {%- endfor -%}
+          {{ out | to_json }}
 
     - name: Write the result
       ansible.builtin.copy:

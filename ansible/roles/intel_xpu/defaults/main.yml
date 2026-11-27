@@ -44,7 +44,9 @@ xpu_packages:
   - pciutils
 
 # Held once installed, so an apt upgrade can't move the stack off what the
-# pinned kernel builds. Their versions are recorded in every facts record.
+# pinned kernel builds. Their exact versions are gpu_stack_pins
+# (group_vars/intel_xpu_nodes.yml), and every facts record carries what is
+# installed, which the health check compares against the pins.
 xpu_held_packages:
   - intel-i915-dkms
   - intel-fw-gpu
@@ -52,6 +54,8 @@ xpu_held_packages:
   - libze1
   - libze-intel-gpu1
   - intel-opencl-icd
+  - libze-dev
+  - libigc-dev
 
 # A VM boots in well under a minute; a cold bare-metal QuadBox takes longer.
 xpu_reboot_timeout: 900

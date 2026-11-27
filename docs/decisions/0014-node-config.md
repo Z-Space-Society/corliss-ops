@@ -86,8 +86,9 @@ control node from the usual bootstrap.
   not registered, and nothing here touches them.
 - Known gaps, each to be closed by making it config: llama.cpp builds from
   HEAD instead of a recorded ref, the GGUF is staged by hand, Secure Boot is a
-  firmware setting the driver roles can only check, and the Intel stack's
-  package versions float within LTS 2523 (recorded in facts, not yet pinned).
+  firmware setting the driver roles can only check, and the NVIDIA stack takes
+  Debian's current packages. The Intel stack is pinned to Q01's versions
+  (`gpu_stack_pins`), and the health check fails a node that drifts from them.
 - A removed node keeps its facts history. Removing drops only its config.
 - `inference.yml` now targets `nvidia_nodes`. A node registered before the
   vendor groups existed sits directly in `inference_nodes` and gets no driver

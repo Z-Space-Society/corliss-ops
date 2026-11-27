@@ -1,0 +1,18 @@
+---
+# Exact versions of the Intel Max 1100 stack, read from Q01 on 2026-11-27
+# (its facts record and apt-cache policy; Q01 passes every health check on
+# them). The runbook's IGC 2.11.43 is stale: Q01 runs 2.11.54. The two dev
+# packages depend on their runtime libraries at the same version, so pinning
+# them fixes those too. The intel_xpu role
+# installs these and holds them, and node-health.yml fails a node whose
+# installed versions differ. Moving to a newer build is a deliberate change
+# here, tested on one node first, never an apt upgrade.
+gpu_stack_pins:
+  intel-i915-dkms: "1.25.2.57.250224.65+i75-1"
+  intel-fw-gpu: "2025.13.2-398~24.04"
+  xpu-smi: "1.2.43-7~24.04"
+  intel-opencl-icd: "25.18.33578.77-1146~24.04"
+  libze-intel-gpu1: "25.18.33578.77-1146~24.04"
+  libze1: "1.24.0.0-1146~24.04"
+  libze-dev: "1.24.0.0-1146~24.04"
+  libigc-dev: "2.11.54-1146~24.04"

@@ -63,7 +63,7 @@ Each is a blueprint default from Q01; a node overrides it in its inventory entry
 | `xpu_power_limit` | `150` | Watts per card. **Per-node config:** `node-config nonint set-power-limit <node> <watts>`. 150 is the lowest `xpu-smi` accepts and what Q01 holds with four cards. Raise it only for cooling measured to sustain more. |
 | `xpu_repo_key_url`, `xpu_repo` | Intel's GPU repo, `noble/lts/2523 unified` | Where the stack comes from. |
 | `xpu_packages` | the runbook's list | Installed. |
-| `xpu_held_packages` | driver, firmware, `xpu-smi`, Level Zero, OpenCL | Held after install; their versions go in every facts record. |
+| `xpu_held_packages` | driver, firmware, `xpu-smi`, Level Zero, OpenCL, the two dev packages | Held after install. Their versions are `gpu_stack_pins` (group vars, not role defaults, so `node-health.yml` sees them too). |
 | `xpu_reboot_timeout` | `900` | Seconds per reboot. |
 
 ## Dependencies
@@ -100,9 +100,12 @@ sudo xpu-smi discovery                               # every card listed
 These are the gaps in the ADR-0014 sense: each one is a decision or a step
 that isn't config yet.
 
-- **Package versions float within LTS 2523.** The role installs whatever the
-  2523 repo has and then holds it. The facts record carries the exact versions
-  (`packages`), so the first build's record is what to pin them to.
+- **Package versions are pinned to Q01's.** `gpu_stack_pins` in
+  [`group_vars/intel_xpu_nodes.yml`](../../ansible/group_vars/intel_xpu_nodes.yml)
+  holds the exact version of each held package, read from Q01 on 2026-11-27;
+  the role installs those and the health check fails a node that drifts. If
+  Intel's repo stops carrying one, the install fails rather than taking a
+  newer build. Moving on is a change to that file, tried on one node first.
 - **Untested in a VM.** Q02A is the first. In particular, whether the guest's
   `setpci` write to the card's DevCtl2 reaches the device through the
   passthrough is unproven. If it doesn't, `scn-pvc-init` refuses to load the

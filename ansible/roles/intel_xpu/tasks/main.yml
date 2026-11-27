@@ -172,13 +172,17 @@
   register: xpu_repo_file
 
 # DKMS builds the driver against the pinned kernel's headers here, which takes
-# a few minutes.
+# a few minutes. A package in gpu_stack_pins (group_vars/intel_xpu_nodes.yml)
+# is installed at exactly that version; if Intel's repo no longer carries it,
+# this fails rather than taking a newer one.
 - name: Install the Intel driver and compute stack
   ansible.builtin.apt:
-    name: "{{ xpu_packages }}"
+    name: "{{ (xpu_packages | reject('in', _pins) | list) + (_pins | dict2items | map(attribute='key') | zip(_pins.values()) | map('join', '=') | list) }}"
     state: present
     update_cache: "{{ xpu_repo_file is changed }}"
   register: xpu_install
+  vars:
+    _pins: "{{ gpu_stack_pins | default({}) }}"
 
 - name: Hold the Intel stack
   ansible.builtin.dpkg_selections:
