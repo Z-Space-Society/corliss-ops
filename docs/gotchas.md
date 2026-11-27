@@ -470,6 +470,14 @@ Hard-won lessons provisioning **human accounts** (`add-github-user.yml`):
   *key* auth, PAM (`UsePAM yes`, Debian default) asks for the *current* password
   to authorize the new one — a locked/empty account can't complete the change. So
   the account is seeded with a printed temp password rather than locked.
+- **An sshd drop-in only wins if it sorts first.** sshd keeps the *first*
+  value it reads for a keyword, and `sshd_config` includes
+  `sshd_config.d/*.conf` at its top, in name order. Cloud and Ubuntu images
+  ship `50-cloud-init.conf` with `PasswordAuthentication yes`, so a drop-in
+  named `zai.conf` would be read after it and silently lose. Ours is
+  `00-corliss-ops.conf` ([#56](https://github.com/Z-Space-Society/corliss-ops/issues/56)).
+  `sshd -T | grep -i passwordauthentication` shows the value sshd actually
+  uses.
 - **Set passwords with `chpasswd`, not `password_hash`.** Debian 13's Python 3.13
   removed the stdlib `crypt` module Ansible's `password_hash` filter used;
   `chpasswd` on the target uses libc crypt instead, so no `python3-passlib` on

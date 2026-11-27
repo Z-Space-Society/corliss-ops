@@ -183,3 +183,8 @@
     state: started
     enabled: true
     daemon_reload: true
+
+# Operators reach CT 100 by key; no account on it may log in over SSH with a
+# password (#56). Shared with add-github-user.yml and the inference node plays.
+- name: Turn off password SSH logins
+  ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/sshd_keys_only.yml"

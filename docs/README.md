@@ -369,7 +369,9 @@ A node is recreated from three things, as everything in corliss-ops is
 Anything a node needs that cannot be written as one of these is a **gap**: it
 is named in the role's doc, not handed over as a runbook step. Known gaps
 today: Secure Boot must be off in firmware (NVIDIA), llama.cpp builds from
-HEAD rather than a recorded ref, and the GGUF is staged by hand.
+HEAD rather than a recorded ref, the GGUF is staged by hand, and an Intel node
+has no play yet, so it gets key-only SSH (#56) only from `add-github-user.yml`
+until its driver play exists.
 
 ### Operator flow
 
@@ -446,8 +448,8 @@ Prepare.
 | `enroll-inference-node.yml` | CT 100 (local) | Record an inference node's config in the runtime inventory, in its vendor group, or drop it (`-e state=absent`). Records only (the engine behind `node-config`'s Register and Remove; [ADR-0014](decisions/0014-node-config.md)) |
 | `node-facts.yml`      | CT 100 → SSH   | Read-only: record each inference node's OS, kernel, held packages, GPUs, driver view, failed units and serving state against its config and `ops_version`, in `/var/lib/corliss-ops/nodes/<node>/` (the engine behind `node-config`'s Register and Collect Facts) |
 | `node-health.yml`     | CT 100 → SSH   | Record the facts, then check each node against its config (GPU count on the bus and in the driver, failed units, serving `/health`); writes `health.json` and fails a node that misses a check (the engine behind `node-config`'s Health Check) |
-| `inference.yml`       | CT 100 → SSH   | Configure the NVIDIA inference nodes (`nvidia_nodes`: `nvidia_cuda` + `llama_server`) |
-| `add-github-user.yml` | CT 100 (local) + SSH | Create a human admin account from GitHub keys, with sudo, on CT 100 + inference nodes |
+| `inference.yml`       | CT 100 → SSH   | Configure the NVIDIA inference nodes (`nvidia_nodes`: key-only SSH, then `nvidia_cuda` + `llama_server`) |
+| `add-github-user.yml` | CT 100 (local) + SSH | Create a human admin account from GitHub keys, with sudo, on CT 100 + inference nodes, and turn off password SSH there (#56) |
 | `backup.yml`          | CT 100 (local) | Install restic + a daily timer backing up control-node runtime state to the object store |
 
 `provision.yml` has two plays: a **create** play (`connection: local`, talks to
