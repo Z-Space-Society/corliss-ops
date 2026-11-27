@@ -1,7 +1,7 @@
 ---
 # Record what an inference node is actually running, next to the config it
 # was registered with. The front end is node-config (it runs this after
-# Register a node, and on its own as Collect facts).
+# Register a node, as Collect facts, and first thing in Health Check).
 #
 #   ansible-playbook node-facts.yml               # every registered node
 #   ansible-playbook node-facts.yml --limit q02a  # one node
@@ -11,13 +11,14 @@
 # latest.json there. The timestamped files are kept, so two runs can be diffed,
 # and zai-backup takes the directory along with the config. A record says:
 # this node, on this date, had this config (its inventory entry), this
-# corliss-ops version, this kernel and these packages held, and these GPUs.
-# See ADR-0014.
+# corliss-ops version, this kernel and these packages held, these GPUs, this
+# driver, and this serving unit. See ADR-0014.
 #
 # Read-only on the node: every probe is changed_when false and failed_when
 # false, so a missing tool (no driver yet, no pciutils) is recorded as missing
-# rather than failing the run. A node that can't be reached over SSH shows as
-# unreachable in the PLAY RECAP; that is the SSH check for Register.
+# rather than failing the run. node-health.yml judges the record; this play
+# never does. A node that can't be reached over SSH shows as unreachable in
+# the PLAY RECAP; that is the SSH check for Register.
 
 - name: Record inference node facts
   hosts: inference_nodes
@@ -36,6 +37,8 @@
       - llama_model_file
       - llama_port
       - llama_extra_args
+    serving_unit: llama-server.service
+    serving_port: "{{ llama_port | default(8080) }}"
   tasks:
     - name: Read held packages
       ansible.builtin.command: apt-mark showhold
@@ -44,14 +47,16 @@
       failed_when: false
 
     # lspci sees passed-through cards before any driver is installed, so this
-    # is the inventory of what the node has, not what a driver claims.
-    - name: List GPUs on the PCI bus
+    # is the inventory of what the node has, not what a driver claims. Every
+    # display device is kept in the record; the node's GPUs are the ones from
+    # its registered vendor (group_vars/inference_nodes.yml).
+    - name: List display devices on the PCI bus
       ansible.builtin.shell: |
         set -o pipefail
         lspci -nn | grep -E 'VGA compatible controller|3D controller|Display controller'
       args:
         executable: /bin/bash
-      register: pci_gpus
+      register: pci_display
       changed_when: false
       failed_when: false
 
@@ -65,11 +70,39 @@
       when: gpu_vendor | default('') == 'nvidia'
 
     - name: Read the Intel XPU runtime's view
-      ansible.builtin.command: xpu-smi discovery
+      ansible.builtin.command: xpu-smi discovery -j
       register: xpu_smi
       changed_when: false
       failed_when: false
       when: gpu_vendor | default('') == 'intel'
+
+    - name: List failed systemd units
+      ansible.builtin.command: systemctl --failed --plain --no-legend
+      register: failed_units
+      changed_when: false
+      failed_when: false
+
+    - name: Read the serving unit's state
+      ansible.builtin.command: >-
+        systemctl show {{ serving_unit }} -p LoadState -p ActiveState -p UnitFileState
+      register: serving_show
+      changed_when: false
+      failed_when: false
+
+    - name: Parse the serving unit's state
+      ansible.builtin.set_fact:
+        serving_state: >-
+          {{ dict(serving_show.stdout_lines | default([]) | select('search', '=')
+                  | map('split', '=', 1)) }}
+
+    - name: Ask the serving unit for its health
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ serving_port }}/health"
+        timeout: 5
+        status_code: [200, 503]
+      register: serving_health
+      failed_when: false
+      when: serving_state.ActiveState | default('') == 'active'
 
     - name: Assemble the record
       ansible.builtin.set_fact:
@@ -81,22 +114,37 @@
           os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
           kernel: "{{ ansible_kernel }}"
           held: "{{ held.stdout_lines | default([]) }}"
-          pci_gpus: "{{ pci_gpus.stdout_lines | default([]) }}"
+          pci_display: "{{ pci_display.stdout_lines | default([]) }}"
+          pci_gpus: "{{ pci_display.stdout_lines | default([]) | select('search', _vendor_pattern) | list if _vendor_id else [] }}"
           driver: "{{ _driver }}"
+          failed_units: "{{ failed_units.stdout_lines | default([]) | map('split') | map('first') | list }}"
+          serving:
+            unit: "{{ serving_unit }}"
+            loaded: "{{ serving_state.LoadState | default('') == 'loaded' }}"
+            enabled: "{{ serving_state.UnitFileState | default('') }}"
+            active: "{{ serving_state.ActiveState | default('') }}"
+            health: "{{ serving_health.status | default(none) }}"
       vars:
+        _vendor_id: "{{ gpu_pci_vendor_ids[gpu_vendor] | default('') if gpu_vendor is defined else '' }}"
+        _vendor_pattern: "\\[{{ _vendor_id }}:[0-9a-f]{4}\\]"
+        _xpu_devices: >-
+          {{ (xpu_smi.stdout | default('{}') | from_json).device_list | default([])
+             if (xpu_smi.rc | default(1)) == 0 and (xpu_smi.stdout | default('') | trim).startswith('{') else [] }}
         _driver: >-
           {{
             {'tool': 'nvidia-smi',
              'ok': nvidia_smi.rc | default(1) == 0,
+             'count': (nvidia_smi.stdout_lines | default([]) | length) if nvidia_smi.rc | default(1) == 0 else 0,
              'lines': nvidia_smi.stdout_lines | default([]) if nvidia_smi.rc | default(1) == 0
                       else [nvidia_smi.msg | default(nvidia_smi.stderr | default('not run'))]}
             if gpu_vendor | default('') == 'nvidia' else
             {'tool': 'xpu-smi',
              'ok': xpu_smi.rc | default(1) == 0,
-             'lines': xpu_smi.stdout_lines | default([]) if xpu_smi.rc | default(1) == 0
+             'count': _xpu_devices | length,
+             'lines': _xpu_devices | map(attribute='device_name', default='?') | list if xpu_smi.rc | default(1) == 0
                       else [xpu_smi.msg | default(xpu_smi.stderr | default('not run'))]}
             if gpu_vendor | default('') == 'intel' else
-            {'tool': none, 'ok': false, 'lines': ['no gpu_vendor recorded']}
+            {'tool': none, 'ok': false, 'count': 0, 'lines': ['no gpu_vendor recorded']}
           }}
 
     - name: Create the node's facts directory on the control node
@@ -122,7 +170,9 @@
       ansible.builtin.debug:
         msg:
           - "{{ node_record.os }}, kernel {{ node_record.kernel }}, corliss-ops {{ node_record.ops_version }}"
-          - "{{ node_record.pci_gpus | length }} GPU(s) on the PCI bus{{ (', ' ~ gpu_count ~ ' expected') if gpu_count is defined else '' }}"
-          - "{{ node_record.driver.tool }}: {{ 'answers' if node_record.driver.ok else 'not answering (no driver yet?)' }}"
+          - "{{ node_record.pci_gpus | length }} {{ gpu_vendor | default('?') }} GPU(s) on the PCI bus ({{ node_record.pci_display | length }} display devices){{ (', ' ~ gpu_count ~ ' expected') if gpu_count is defined else '' }}"
+          - "{{ node_record.driver.tool }}: {{ (node_record.driver.count ~ ' device(s)') if node_record.driver.ok else 'not answering (no driver yet?)' }}"
           - "Held: {{ node_record.held | join(', ') if node_record.held else 'nothing' }}"
+          - "Failed units: {{ node_record.failed_units | join(', ') if node_record.failed_units else 'none' }}"
+          - "{{ serving_unit }}: {{ (node_record.serving.active ~ ', health ' ~ (node_record.serving.health | default('-', true))) if node_record.serving.loaded else 'not installed' }}"
           - "Written to {{ facts_dir }}/{{ inventory_hostname }}/latest.json"

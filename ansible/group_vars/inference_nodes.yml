@@ -1,0 +1,11 @@
+---
+# Blueprint constants for every inference node (docs/README.md, Inference
+# nodes). Per-node config (address, vendor, count, serving) lives in the
+# runtime inventory, written by node-config; nothing this-cluster goes here.
+
+# PCI vendor ID of each gpu_vendor's cards. A VM also shows its own virtual
+# display adapter (QEMU's is 1234:1111), so a node's GPUs are the display
+# devices from its registered vendor, not every display device lspci lists.
+gpu_pci_vendor_ids:
+  nvidia: "10de"
+  intel: "8086"

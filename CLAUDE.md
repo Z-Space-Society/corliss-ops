@@ -164,7 +164,9 @@ out and update the docs.
   `inventory/local.yml` via `enroll-inference-node.yml`. `gpu_vendor` puts it
   in `nvidia_nodes` or `intel_xpu_nodes`, and a vendor's playbook targets only
   its group. `node-facts.yml` records what each node runs against its config
-  in `/var/lib/corliss-ops/nodes/<node>/` (timestamped, backed up). The one
+  in `/var/lib/corliss-ops/nodes/<node>/` (timestamped, backed up), and
+  `node-health.yml` judges that record against the config (GPU count, driver,
+  failed units, serving). The one
   manual step per node is pasting `node-config nonint print-node-prep`.
   Production nodes (salmon, orca, GX10, picard) stay hand-built for now; node
   work is proven on Q02. Kept apart from scn-config because it manages

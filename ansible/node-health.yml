@@ -1,0 +1,80 @@
+---
+# Check each inference node against its config. The front end is node-config
+# (Health Check, or `node-config nonint health [node...]`).
+#
+#   ansible-playbook node-health.yml               # every registered node
+#   ansible-playbook node-health.yml --limit q02a  # one node
+#
+# It records the node's facts first (node-facts.yml), so every health run is
+# also a dated record, then judges that record. A node passes when:
+#   - its config records a gpu_count
+#   - lspci shows that many GPUs from its registered vendor
+#   - the vendor's driver tool answers and sees that many
+#   - no systemd unit has failed
+#   - its serving unit, once installed, is active and /health answers 200
+# The result goes to /var/lib/corliss-ops/nodes/<node>/health.json beside the
+# facts, ends with one Summary line per node, and a node that fails a check
+# fails the run (failed=1 in the PLAY RECAP). See ADR-0014.
+
+- name: Record the facts
+  ansible.builtin.import_playbook: node-facts.yml
+
+- name: Check inference nodes against their config
+  hosts: inference_nodes
+  gather_facts: false
+  vars:
+    facts_dir: /var/lib/corliss-ops/nodes
+  tasks:
+    - name: Judge the record
+      ansible.builtin.set_fact:
+        node_checks:
+          - check: gpu_count recorded
+            ok: "{{ _want is not none }}"
+            detail: "{{ _want if _want is not none else 'register the node again with its GPU count' }}"
+          - check: GPUs on the PCI bus
+            ok: "{{ _want is not none and _pci == _want }}"
+            detail: "{{ _pci }} {{ gpu_vendor | default('?') }} found{{ (', ' ~ _want ~ ' expected') if _want is not none else '' }}"
+          - check: driver sees the GPUs
+            ok: "{{ _want is not none and node_record.driver.ok and node_record.driver.count == _want }}"
+            detail: >-
+              {{ (node_record.driver.tool ~ ' sees ' ~ node_record.driver.count)
+                 if node_record.driver.ok else (node_record.driver.tool ~ ' not answering') }}
+          - check: no failed units
+            ok: "{{ node_record.failed_units | length == 0 }}"
+            detail: "{{ node_record.failed_units | join(', ') if node_record.failed_units else 'none' }}"
+          - check: serving
+            ok: >-
+              {{ not node_record.serving.loaded
+                 or (node_record.serving.active == 'active' and node_record.serving.health == 200) }}
+            detail: >-
+              {{ (node_record.serving.unit ~ ' ' ~ node_record.serving.active ~ ', /health '
+                  ~ (node_record.serving.health | default('no answer', true)))
+                 if node_record.serving.loaded else 'no serving unit installed yet' }}
+      vars:
+        _want: "{{ gpu_count | int if gpu_count is defined else none }}"
+        _pci: "{{ node_record.pci_gpus | length }}"
+
+    - name: Write the result
+      ansible.builtin.copy:
+        dest: "{{ facts_dir }}/{{ inventory_hostname }}/health.json"
+        content: >-
+          {{ {'node': inventory_hostname,
+              'checked_at': node_record.collected_at,
+              'ops_version': node_record.ops_version,
+              'ok': node_checks | rejectattr('ok') | list | length == 0,
+              'checks': node_checks} | to_nice_json(indent=2) }}
+        mode: "0644"
+      delegate_to: localhost
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          {{ node_checks | map(attribute='ok') | map('ternary', 'PASS', 'FAIL')
+             | zip(node_checks | map(attribute='check'), node_checks | map(attribute='detail'))
+             | map('join', '  ') | list }}
+
+    - name: Fail a node that misses a check
+      ansible.builtin.assert:
+        that: node_checks | rejectattr('ok') | list | length == 0
+        fail_msg: "{{ inventory_hostname }} fails: {{ node_checks | rejectattr('ok') | map(attribute='check') | join(', ') }}"
+        success_msg: "{{ inventory_hostname }} passes every check"
