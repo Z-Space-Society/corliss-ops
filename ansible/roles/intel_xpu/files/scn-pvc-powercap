@@ -1,0 +1,22 @@
+#!/bin/sh
+# Managed by corliss-ops (roles/intel_xpu).
+# SCN: set the power limit on every Max 1100 (8086:0bda) and verify it.
+# The card's limit is runtime only and resets at every reboot. The limit is
+# the node's xpu_power_limit, passed by scn-pvc-powercap.service.
+LIMIT=${1:-150}
+N=$(/usr/bin/lspci -d 8086:0bda | wc -l)
+if [ "$N" -eq 0 ]; then echo "scn-pvc-powercap: no 8086:0bda found" >&2; exit 1; fi
+i=0
+while [ "$i" -lt "$N" ]; do
+    ok=0; got=""
+    for try in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        if xpu-smi config -d "$i" --powerlimit "$LIMIT" >/dev/null 2>&1; then
+            got=$(xpu-smi config -d "$i" | sed -n 's/.*Power Limit (w): *\([0-9][0-9]*\).*/\1/p')
+            if [ "$got" = "$LIMIT" ]; then ok=1; break; fi
+        fi
+        sleep 5
+    done
+    if [ "$ok" -ne 1 ]; then echo "scn-pvc-powercap: device $i did not take $LIMIT W (reads '${got:-nothing}')" >&2; exit 1; fi
+    echo "scn-pvc-powercap: device $i power limit $got W"
+    i=$((i + 1))
+done

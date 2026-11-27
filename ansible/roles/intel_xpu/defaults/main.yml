@@ -1,0 +1,57 @@
+---
+# Intel Data Center GPU Max 1100 (8086:0bda) on Ubuntu 24.04, as Q01 runs it.
+# Every value here is a blueprint default taken from Q01's stable state
+# (scnvault Projects/QuadBox/Q01, 2026-10-28); a node overrides any of them
+# in its runtime inventory entry. See docs/roles/intel_xpu.md.
+
+# Intel's out-of-tree i915 (LTS 2523) builds only on Ubuntu's 6.8 GA kernels,
+# and 6.8.0-147 changed pci_resize_resource's signature, so nothing from 147
+# on builds. Q01 runs 146, held; 139 is the kernel proven on both Q01 and
+# salmon, kept installed as a GRUB fallback. Never upgraded: the hold is the pin.
+xpu_kernel: 6.8.0-146-generic
+xpu_fallback_kernel: 6.8.0-139-generic
+
+# pci=realloc=off is required on every Max 1100 node: without it the kernel
+# moves the card's BARs at boot (to fit SR-IOV VF BARs) and the card can't
+# complete GPU work. Q01 also carries erst_disable, added only while chasing
+# a host reset, so it is not a default.
+xpu_kernel_cmdline: "pci=realloc=off"
+
+# Watts per card. Per-node config: set with `node-config nonint
+# set-power-limit <node> <watts>`, which records it in the node's inventory
+# entry. The limit resets at every boot; scn-pvc-powercap sets it on every card
+# and verifies it. 150 W is the lowest xpu-smi accepts, and is what Q01 holds
+# with four cards (10 minutes, temporary cooling), so it is the default. Raise
+# it only for cooling that has been measured to sustain more.
+xpu_power_limit: 150
+
+# Intel's Data Center GPU repository, the LTS 2523 stream.
+xpu_repo_key_url: https://repositories.intel.com/gpu/intel-graphics.key
+xpu_repo: "deb [arch=amd64 signed-by=/usr/share/keyrings/intel-graphics.asc] https://repositories.intel.com/gpu/ubuntu noble/lts/2523 unified"
+
+xpu_packages:
+  - flex
+  - bison
+  - intel-fw-gpu
+  - intel-i915-dkms
+  - xpu-smi
+  - intel-opencl-icd
+  - libze-intel-gpu1
+  - libze1
+  - libze-dev
+  - libigc-dev
+  - clinfo
+  - pciutils
+
+# Held once installed, so an apt upgrade can't move the stack off what the
+# pinned kernel builds. Their versions are recorded in every facts record.
+xpu_held_packages:
+  - intel-i915-dkms
+  - intel-fw-gpu
+  - xpu-smi
+  - libze1
+  - libze-intel-gpu1
+  - intel-opencl-icd
+
+# A VM boots in well under a minute; a cold bare-metal QuadBox takes longer.
+xpu_reboot_timeout: 900

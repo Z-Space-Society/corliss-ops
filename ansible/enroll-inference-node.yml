@@ -4,7 +4,7 @@
 # Remove a node); this is the playbook underneath it.
 #
 #   ansible-playbook enroll-inference-node.yml \
-#     -e "node=q02b ansible_host=192.168.6.82 gpu_vendor=nvidia gpu_count=4"
+#     -e "node=q02b address=192.168.6.82 gpu_vendor=nvidia gpu_count=4"
 #   ansible-playbook enroll-inference-node.yml -e "node=q02b state=absent"
 #
 # The node's entry is its config: the decisions someone made about it (which
@@ -20,11 +20,17 @@
 #
 # Serving vars are optional; omit them to take the llama_server role defaults,
 # or pass them here (JSON form is easiest for lists), e.g.:
-#   -e '{"node":"q02b","ansible_host":"192.168.6.82","gpu_vendor":"nvidia",
+#   -e '{"node":"q02b","address":"192.168.6.82","gpu_vendor":"nvidia",
 #        "llama_model_file":"Apertus-8B-Instruct-2509-Q5_K_M.gguf",
 #        "llama_extra_args":["--jinja","--tensor-split","1,1"]}'
 # Registering again merges into the existing entry, so a key not passed keeps
-# its recorded value.
+# its recorded value. For a node already recorded, the address and vendor may
+# be left out too, so one setting can change on its own:
+#   ansible-playbook enroll-inference-node.yml -e "node=q02a xpu_power_limit=200"
+# (node-config nonint set-power-limit q02a 200 is the front end for that one).
+#
+# xpu_power_limit is watts per card on an Intel Max node (roles/intel_xpu);
+# 150 is the lowest xpu-smi accepts, so nothing lower is recorded.
 
 - name: Record an inference node in the runtime inventory
   hosts: localhost
@@ -48,19 +54,6 @@
           state=present|absent, e.g. -e "node=q02b state=absent"
         quiet: true
 
-    - name: Require an address and a known vendor to register
-      ansible.builtin.assert:
-        that:
-          - ansible_host is defined and (ansible_host | string | length) > 0
-          - gpu_vendor is defined and gpu_vendor in vendor_groups
-          - gpu_count is not defined or (gpu_count | string is match('^[0-9]+$'))
-        fail_msg: >-
-          Pass ansible_host and gpu_vendor ({{ vendor_groups.keys() | join(' or ') }}),
-          and gpu_count as a whole number if given, e.g.
-          -e "node=q02b ansible_host=192.168.6.82 gpu_vendor=nvidia gpu_count=4"
-        quiet: true
-      when: node_state == 'present'
-
     # errors='ignore' gives an empty string when the file doesn't exist yet;
     # 'or {}' turns that (and an empty file) into an empty mapping.
     - name: Load the existing runtime inventory (empty if absent)
@@ -73,6 +66,31 @@
       ansible.builtin.set_fact:
         prior_entry: "{{ runtime_data | inference_node_entry(node) }}"
 
+    # What was passed wins; a node already recorded keeps its address and vendor.
+    # The address comes in as `address`, not ansible_host: this play runs on
+    # localhost, where Ansible defines ansible_host as 127.0.0.1, so an omitted
+    # ansible_host would silently record that.
+    - name: Settle the node's address and vendor
+      ansible.builtin.set_fact:
+        node_host: "{{ address | default(prior_entry.ansible_host | default('')) }}"
+        node_vendor: "{{ gpu_vendor | default(prior_entry.gpu_vendor | default('')) }}"
+      when: node_state == 'present'
+
+    - name: Require an address, a known vendor and valid numbers
+      ansible.builtin.assert:
+        that:
+          - node_host | string | length > 0
+          - node_vendor in vendor_groups
+          - gpu_count is not defined or (gpu_count | string is match('^[0-9]+$'))
+          - xpu_power_limit is not defined or (xpu_power_limit | string is match('^[0-9]+$') and xpu_power_limit | int >= 150)
+        fail_msg: >-
+          A new node needs address and gpu_vendor ({{ vendor_groups.keys() | join(' or ') }});
+          gpu_count is a whole number, and xpu_power_limit whole watts, 150 or more
+          (the lowest xpu-smi accepts). e.g.
+          -e "node=q02b address=192.168.6.82 gpu_vendor=nvidia gpu_count=4"
+        quiet: true
+      when: node_state == 'present'
+
     # Only keys the operator supplied change, so a value not passed keeps what
     # was recorded, and unset serving vars fall through to the role defaults.
     - name: Assemble the node's entry
@@ -80,19 +98,20 @@
         node_entry: >-
           {{
             prior_entry
-            | combine({'ansible_host': ansible_host,
-                       'ansible_user': ansible_user | default(prior_entry.ansible_user | default('ansible')),
-                       'gpu_vendor': gpu_vendor})
+            | combine({'ansible_host': node_host,
+                       'ansible_user': prior_entry.ansible_user | default('ansible'),
+                       'gpu_vendor': node_vendor})
             | combine({'gpu_count': gpu_count | int} if gpu_count is defined else {})
             | combine({'llama_model_file': llama_model_file} if llama_model_file is defined else {})
             | combine({'llama_port': llama_port | int} if llama_port is defined else {})
             | combine({'llama_extra_args': llama_extra_args} if llama_extra_args is defined else {})
+            | combine({'xpu_power_limit': xpu_power_limit | int} if xpu_power_limit is defined else {})
           }}
       when: node_state == 'present'
 
     - name: Place the node in its vendor group
       ansible.builtin.set_fact:
-        new_data: "{{ runtime_data | inference_node_set(node, vendor_groups[gpu_vendor], node_entry) }}"
+        new_data: "{{ runtime_data | inference_node_set(node, vendor_groups[node_vendor], node_entry) }}"
       when: node_state == 'present'
 
     - name: Drop the node
@@ -109,7 +128,7 @@
     - name: Report
       ansible.builtin.debug:
         msg: >-
-          {{ ('Recorded ' ~ node ~ ' (' ~ ansible_host ~ ') in ' ~ vendor_groups[gpu_vendor])
+          {{ ('Recorded ' ~ node ~ ' (' ~ node_host ~ ') in ' ~ vendor_groups[node_vendor])
              if node_state == 'present'
              else ('Dropped ' ~ node ~ ' from the runtime inventory' if prior_entry
                    else node ~ ' was not recorded; nothing to drop') }}

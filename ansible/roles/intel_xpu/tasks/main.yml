@@ -1,0 +1,327 @@
+---
+# Intel Data Center GPU Max 1100 on Ubuntu 24.04, built to Q01's stable state
+# (scnvault Projects/QuadBox/Q01 and the Max 1100 node-build runbook). Three
+# phases, each idempotent, with a reboot where the runbook has one:
+#
+#   1. Kernel: install the pin and its fallback, point GRUB at the pin with
+#      the required cmdline, and boot into it.
+#   2. Clean up and install: purge every other kernel, hold the pin, add
+#      Intel's LTS 2523 repo, install and hold the stack, blacklist i915 so
+#      only scn-pvc-init loads it, install scn-pvc-init and scn-pvc-powercap.
+#      Reboot so the driver loads the safe way.
+#   3. Verify: what the runbook's step 8 checks, as asserts.
+#
+# Never upgrade a held package here: the hold is the pin.
+
+# --- Preconditions --------------------------------------------------------------
+- name: Require Ubuntu 24.04
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution == 'Ubuntu'
+      - ansible_distribution_version == '24.04'
+    fail_msg: >-
+      intel_xpu builds Intel's LTS 2523 stack, which needs Ubuntu 24.04's 6.8
+      kernels; this node runs {{ ansible_distribution }} {{ ansible_distribution_version }}.
+    quiet: true
+
+- name: Install mokutil and pciutils
+  ansible.builtin.apt:
+    name: [mokutil, pciutils]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Read the Secure Boot state
+  ansible.builtin.command: mokutil --sb-state
+  register: secure_boot
+  changed_when: false
+  failed_when: false
+
+# The driver is built by DKMS on the node, so it is unsigned. A Proxmox VM
+# with OVMF and pre-enrolled keys boots with Secure Boot on.
+- name: Fail if Secure Boot is enabled
+  ansible.builtin.assert:
+    that:
+      - "'enabled' not in (secure_boot.stdout | default('') | lower)"
+    fail_msg: >-
+      Secure Boot is ENABLED ({{ secure_boot.stdout | default('') | trim }}). The
+      Intel driver is built here and unsigned, so the kernel would refuse it.
+      Turn it off in firmware (a Proxmox VM: its EFI disk without pre-enrolled
+      keys, or OVMF setup > Device Manager > Secure Boot Configuration), then re-run.
+    success_msg: Secure Boot is off.
+
+# Offering 26.04 would replace the 6.8 kernel the whole stack depends on.
+- name: Never offer a release upgrade
+  ansible.builtin.lineinfile:
+    path: /etc/update-manager/release-upgrades
+    regexp: '^Prompt='
+    line: Prompt=never
+    create: true
+    mode: "0644"
+
+# --- 1. Kernel ------------------------------------------------------------------
+- name: Install the pinned kernel and its fallback
+  ansible.builtin.apt:
+    name: >-
+      {{ [xpu_kernel, xpu_fallback_kernel]
+         | product(['linux-image-', 'linux-headers-', 'linux-modules-', 'linux-modules-extra-'])
+         | map('reverse') | map('join') | list }}
+    state: present
+
+# A visible menu, so a bad boot can be recovered from the console by picking
+# the fallback.
+- name: Point GRUB at the pinned kernel, with the required cmdline
+  ansible.builtin.lineinfile:
+    path: /etc/default/grub
+    regexp: "^{{ item.key }}="
+    line: '{{ item.key }}="{{ item.value }}"'
+  loop:
+    - { key: GRUB_DEFAULT, value: "Advanced options for Ubuntu>Ubuntu, with Linux {{ xpu_kernel }}" }
+    - { key: GRUB_CMDLINE_LINUX_DEFAULT, value: "{{ xpu_kernel_cmdline }}" }
+    - { key: GRUB_TIMEOUT_STYLE, value: menu }
+    - { key: GRUB_TIMEOUT, value: "10" }
+  register: grub_config
+
+- name: Regenerate the GRUB config
+  ansible.builtin.command: update-grub
+  when: grub_config is changed
+
+- name: Read the kernel command line
+  ansible.builtin.slurp:
+    src: /proc/cmdline
+  register: proc_cmdline
+
+# Reboot when the running kernel isn't the pin, or the cmdline it booted with
+# lacks a required parameter.
+- name: Boot into the pinned kernel
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ xpu_reboot_timeout }}"
+  when: >-
+    ansible_kernel != xpu_kernel
+    or (xpu_kernel_cmdline.split() | difference((proc_cmdline.content | b64decode).split()) | length) > 0
+
+- name: Read the running kernel
+  ansible.builtin.command: uname -r
+  register: running_kernel
+  changed_when: false
+
+- name: Require the pinned kernel to be running
+  ansible.builtin.assert:
+    that: running_kernel.stdout == xpu_kernel
+    fail_msg: >-
+      After the reboot the node runs {{ running_kernel.stdout }}, not {{ xpu_kernel }}.
+      Check GRUB_DEFAULT in /etc/default/grub against the menu entries in
+      /boot/grub/grub.cfg. Nothing was purged.
+    success_msg: "Running {{ xpu_kernel }}."
+
+# --- 2. Clean up and install ----------------------------------------------------
+# Holds alone don't stop apt installing a new kernel ABI if a metapackage
+# depends on it, so the metapackages go.
+- name: Remove the kernel metapackages
+  ansible.builtin.apt:
+    name:
+      - linux-generic
+      - linux-image-generic
+      - linux-headers-generic
+      - linux-virtual
+      - linux-image-virtual
+      - linux-headers-virtual
+      - linux-generic-hwe-24.04
+      - linux-image-generic-hwe-24.04
+      - linux-headers-generic-hwe-24.04
+    state: absent
+    purge: true
+
+- name: List installed packages
+  ansible.builtin.package_facts:
+    manager: apt
+
+# Anything kernel-versioned that isn't the pin or the fallback: the installer's
+# kernel (151 on Q02A) and whatever came after it.
+- name: Purge every other kernel
+  ansible.builtin.apt:
+    name: "{{ _other_kernels }}"
+    state: absent
+    purge: true
+  when: _other_kernels | length > 0
+  vars:
+    _keep: "{{ [xpu_kernel, xpu_fallback_kernel] | map('regex_replace', '-generic$', '') | list }}"
+    _other_kernels: >-
+      {{ ansible_facts.packages.keys()
+         | select('match', '^linux-(image|headers|modules|modules-extra|tools)-6\.')
+         | reject('search', _keep | map('regex_escape') | join('|'))
+         | list }}
+
+- name: Hold the pinned kernel
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}{{ xpu_kernel }}"
+    selection: hold
+  loop: [linux-image-, linux-headers-, linux-modules-, linux-modules-extra-]
+
+- name: Add Intel's repository key
+  ansible.builtin.get_url:
+    url: "{{ xpu_repo_key_url }}"
+    dest: /usr/share/keyrings/intel-graphics.asc
+    mode: "0644"
+
+- name: Add Intel's LTS 2523 repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/intel-gpu-noble.list
+    content: "{{ xpu_repo }}\n"
+    mode: "0644"
+  register: xpu_repo_file
+
+# DKMS builds the driver against the pinned kernel's headers here, which takes
+# a few minutes.
+- name: Install the Intel driver and compute stack
+  ansible.builtin.apt:
+    name: "{{ xpu_packages }}"
+    state: present
+    update_cache: "{{ xpu_repo_file is changed }}"
+  register: xpu_install
+
+- name: Hold the Intel stack
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ xpu_held_packages }}"
+
+- name: Read the driver's DKMS state
+  ansible.builtin.command: dkms status intel-i915-dkms
+  register: dkms_state
+  changed_when: false
+
+- name: Require the driver built for the pinned kernel
+  ansible.builtin.assert:
+    that: dkms_state.stdout_lines | select('search', xpu_kernel ~ '.*installed') | list | length > 0
+    fail_msg: >-
+      intel-i915-dkms is not installed for {{ xpu_kernel }}:
+      {{ dkms_state.stdout | default('') }}. The build log is under
+      /var/lib/dkms/intel-i915-dkms/<version>/build/make.log.
+    success_msg: "{{ dkms_state.stdout_lines | select('search', xpu_kernel) | first }}"
+
+# The blacklist is part of the fix: without it i915 loads at boot, before the
+# 10-bit tags are cleared, and on the Tyan the host resets.
+- name: Blacklist i915 so only scn-pvc-init loads it
+  ansible.builtin.copy:
+    src: zz-no-i915.conf
+    dest: /etc/modprobe.d/zz-no-i915.conf
+    mode: "0644"
+  register: xpu_blacklist
+
+- name: Rebuild the initramfs with the blacklist
+  ansible.builtin.command: update-initramfs -u -k all
+  when: xpu_blacklist is changed
+
+- name: Install scn-pvc-init
+  ansible.builtin.copy:
+    src: scn-pvc-init
+    dest: /usr/local/sbin/scn-pvc-init
+    mode: "0755"
+  register: xpu_init_script
+
+- name: Install scn-pvc-powercap
+  ansible.builtin.copy:
+    src: scn-pvc-powercap
+    dest: /usr/local/sbin/scn-pvc-powercap
+    mode: "0755"
+  register: xpu_cap_script
+
+- name: Install the scn-pvc-init unit
+  ansible.builtin.copy:
+    src: scn-pvc-init.service
+    dest: /etc/systemd/system/scn-pvc-init.service
+    mode: "0644"
+  register: xpu_init_unit
+
+- name: Install the scn-pvc-powercap unit
+  ansible.builtin.template:
+    src: scn-pvc-powercap.service.j2
+    dest: /etc/systemd/system/scn-pvc-powercap.service
+    mode: "0644"
+  register: xpu_cap_unit
+
+- name: Enable both units
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    enabled: true
+    daemon_reload: true
+  loop: [scn-pvc-init.service, scn-pvc-powercap.service]
+
+# Loading the driver is a boot-time job by design: scn-pvc-init has to run
+# before anything else touches the cards. So any change to the driver or its
+# loading means a reboot, never a modprobe here.
+- name: Reboot so the driver loads through scn-pvc-init
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ xpu_reboot_timeout }}"
+  register: xpu_reboot
+  when: >-
+    xpu_install is changed or xpu_blacklist is changed
+    or xpu_init_script is changed or xpu_init_unit is changed
+
+# The power limit is runtime only, and scn-pvc-powercap is safe to rerun on a
+# loaded driver, so a new limit (node-config set-power-limit) is applied by
+# restarting it, not by rebooting the node.
+- name: Apply a changed power limit
+  ansible.builtin.systemd:
+    name: scn-pvc-powercap.service
+    state: restarted
+  when: (xpu_cap_script is changed or xpu_cap_unit is changed) and xpu_reboot is skipped
+
+# --- 3. Verify ------------------------------------------------------------------
+# scn-pvc-powercap retries for up to a minute per card after the driver loads.
+- name: Wait for the boot units to finish
+  ansible.builtin.command: systemctl is-active scn-pvc-init.service scn-pvc-powercap.service
+  register: xpu_units
+  changed_when: false
+  failed_when: false
+  until: xpu_units.stdout_lines | reject('equalto', 'activating') | list | length == 2
+  retries: 30
+  delay: 10
+
+- name: Read the boot units' journals
+  ansible.builtin.command: journalctl -b -u scn-pvc-init -u scn-pvc-powercap --no-pager -o cat
+  register: xpu_journal
+  changed_when: false
+
+- name: Read the cards' 10-bit tag state
+  ansible.builtin.shell: |
+    set -o pipefail
+    lspci -d 8086:0bda -vvv | grep 'DevCtl2:'
+  args:
+    executable: /bin/bash
+  register: xpu_devctl2
+  changed_when: false
+  failed_when: false
+
+- name: Read xpu-smi's device list
+  ansible.builtin.command: xpu-smi discovery -j
+  register: xpu_discovery
+  changed_when: false
+  failed_when: false
+
+- name: Show what came up
+  ansible.builtin.debug:
+    msg:
+      - "scn-pvc-init {{ xpu_units.stdout_lines[0] | default('?') }}, scn-pvc-powercap {{ xpu_units.stdout_lines[1] | default('?') }}"
+      - "{{ xpu_journal.stdout_lines | select('search', 'scn-pvc') | list }}"
+      - "DevCtl2: {{ xpu_devctl2.stdout_lines | map('trim') | list }}"
+      - "xpu-smi sees {{ _devices | length }}: {{ _devices | map(attribute='device_name', default='?') | list }}"
+  vars:
+    _devices: "{{ (xpu_discovery.stdout | from_json).device_list | default([]) if xpu_discovery.rc == 0 else [] }}"
+
+- name: Require the driver loaded the safe way, on every card
+  ansible.builtin.assert:
+    that:
+      - xpu_units.stdout_lines == ['active', 'active']
+      - xpu_devctl2.stdout_lines | length > 0
+      - xpu_devctl2.stdout_lines | select('search', '10BitTagReq\+') | list | length == 0
+      - xpu_discovery.rc == 0
+      - gpu_count is not defined or ((xpu_discovery.stdout | from_json).device_list | default([]) | length) == gpu_count | int
+    fail_msg: >-
+      The Max 1100 stack is not up. See "Show what came up" above:
+      scn-pvc-init refuses to load i915 when a card still has 10-bit tags
+      enabled, and scn-pvc-powercap fails when a card won't take
+      {{ xpu_power_limit }} W. `journalctl -b -u scn-pvc-init -u scn-pvc-powercap`
+      on the node has the detail.
+    success_msg: "i915 loaded by scn-pvc-init, 10-bit tags off, power limit {{ xpu_power_limit }} W."

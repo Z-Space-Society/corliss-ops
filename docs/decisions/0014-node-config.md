@@ -86,8 +86,8 @@ control node from the usual bootstrap.
   not registered, and nothing here touches them.
 - Known gaps, each to be closed by making it config: llama.cpp builds from
   HEAD instead of a recorded ref, the GGUF is staged by hand, Secure Boot is a
-  firmware setting the NVIDIA role can only check, and Intel Max nodes have no
-  driver role yet.
+  firmware setting the driver roles can only check, and the Intel stack's
+  package versions float within LTS 2523 (recorded in facts, not yet pinned).
 - A removed node keeps its facts history. Removing drops only its config.
 - `inference.yml` now targets `nvidia_nodes`. A node registered before the
   vendor groups existed sits directly in `inference_nodes` and gets no driver

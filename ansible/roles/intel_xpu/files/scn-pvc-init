@@ -1,0 +1,14 @@
+#!/bin/sh
+# Managed by corliss-ops (roles/intel_xpu).
+# SCN: clear PCIe 10-bit tag requester on every Max 1100 (8086:0bda),
+# verify, then load i915. Some root ports cannot complete 10-bit tags;
+# leaving them on stops the GuC answering and can reset the host.
+# See scnvault Projects/QuadBox/Q01 bring-up log, steps 22 to 24.
+set -e
+/usr/bin/setpci -d 8086:0bda CAP_EXP+28.w=0000:1000
+if /usr/bin/lspci -d 8086:0bda -vvv | grep 'DevCtl2:' | grep -q '10BitTagReq+'; then
+    echo "scn-pvc-init: 10-bit tag requester still enabled, NOT loading i915" >&2
+    exit 1
+fi
+echo "scn-pvc-init: 10-bit tags cleared on all 8086:0bda, loading i915"
+exec /usr/sbin/modprobe --ignore-install i915
