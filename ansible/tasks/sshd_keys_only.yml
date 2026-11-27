@@ -40,10 +40,14 @@
   changed_when: false
   when: sshd_binary.stat.exists
 
-# Ubuntu 24.04 starts ssh.service from ssh.socket on the first connection, so
-# the service can be inactive; it reads the new config whenever it next starts.
-# Reload, never restart: open sessions (this one included) stay up.
-- name: SSH | Reload the server to apply it
-  ansible.builtin.shell: |
-    if systemctl is-active -q ssh.service; then systemctl reload ssh.service; fi
+# Restart, never reload. Where ssh.socket owns port 22 (Debian 13's CT
+# template, Ubuntu 24.04), a reload's SIGHUP makes sshd re-exec and bind :22
+# itself, which the socket already holds: "Cannot bind any address", and sshd
+# is gone (seen on Ronchamp's CT 100). A restart is handed the socket again.
+# try-restart touches only a running sshd; a stopped one is started by the
+# socket on the next connection and reads the new config then. ssh.service is
+# KillMode=process on Debian and Ubuntu, so open sessions, this one included,
+# survive it.
+- name: SSH | Restart the server to apply it
+  ansible.builtin.command: systemctl try-restart ssh.service
   when: sshd_dropin is changed
