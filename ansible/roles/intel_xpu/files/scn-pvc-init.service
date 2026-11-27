@@ -1,0 +1,14 @@
+# Managed by corliss-ops (roles/intel_xpu).
+[Unit]
+Description=SCN: clear PCIe 10-bit tags on Max 1100, then load i915
+After=systemd-modules-load.service
+ConditionPathExists=/usr/local/sbin/scn-pvc-init
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/scn-pvc-init
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

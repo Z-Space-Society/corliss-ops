@@ -37,6 +37,7 @@
       - llama_model_file
       - llama_port
       - llama_extra_args
+      - xpu_power_limit
     serving_unit: llama-server.service
     serving_port: "{{ llama_port | default(8080) }}"
   tasks:
@@ -75,6 +76,14 @@
       changed_when: false
       failed_when: false
       when: gpu_vendor | default('') == 'intel'
+
+    - name: Read the driver stack's installed versions
+      ansible.builtin.command:
+        argv: "{{ ['dpkg-query', '-W', '-f=${Package} ${Version}\n'] + gpu_stack_packages[gpu_vendor] }}"
+      register: stack_versions
+      changed_when: false
+      failed_when: false
+      when: gpu_vendor | default('') in gpu_stack_packages
 
     - name: List failed systemd units
       ansible.builtin.command: systemctl --failed --plain --no-legend
@@ -117,6 +126,7 @@
           pci_display: "{{ pci_display.stdout_lines | default([]) }}"
           pci_gpus: "{{ pci_display.stdout_lines | default([]) | select('search', _vendor_pattern) | list if _vendor_id else [] }}"
           driver: "{{ _driver }}"
+          packages: "{{ dict(stack_versions.stdout_lines | default([]) | map('regex_replace', '^(\\S+) ?(.*)$', '\\1\t\\2') | map('split', '\t') | list) }}"
           failed_units: "{{ failed_units.stdout_lines | default([]) | map('split') | map('first') | list }}"
           serving:
             unit: "{{ serving_unit }}"

@@ -1,0 +1,15 @@
+{{ ansible_managed | comment }}
+[Unit]
+Description=SCN: set Max 1100 power limit after i915 loads
+Requires=scn-pvc-init.service
+After=scn-pvc-init.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# The node's xpu_power_limit (roles/intel_xpu defaults, or its inventory entry).
+ExecStart=/usr/local/sbin/scn-pvc-powercap {{ xpu_power_limit | int }}
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

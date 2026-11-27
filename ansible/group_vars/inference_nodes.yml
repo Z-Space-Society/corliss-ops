@@ -9,3 +9,18 @@
 gpu_pci_vendor_ids:
   nvidia: "10de"
   intel: "8086"
+
+# The driver stack each vendor's role installs. Every facts record carries
+# their installed versions, so "what ran here" is a file, not a memory.
+gpu_stack_packages:
+  nvidia:
+    - nvidia-driver
+    - nvidia-cuda-toolkit
+    - nvidia-cuda-toolkit-gcc
+  intel:
+    - intel-i915-dkms
+    - intel-fw-gpu
+    - xpu-smi
+    - libze1
+    - libze-intel-gpu1
+    - intel-opencl-icd

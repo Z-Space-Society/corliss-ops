@@ -363,15 +363,16 @@ A node is recreated from three things, as everything in corliss-ops is
 | `ansible_host` | node-config, Register | Whatever reaches the node: a LAN IP, a DNS name, a Tailscale 100.x. |
 | `ansible_user` | enroll (always `ansible`) | The user Prepare creates. |
 | `gpu_vendor` | node-config, Register | `nvidia` or `intel`. Puts the node in `nvidia_nodes` or `intel_xpu_nodes`, which decides its driver stack. |
+| `xpu_power_limit` | node-config, `set-power-limit` | Watts per card on an Intel Max node, 150 or more (the lowest `xpu-smi` accepts; the default). Applied by the next `inference.yml` run without a reboot. |
 | `gpu_count` | node-config, Register | How many GPUs the node should show; the health check fails a node that shows another number. |
 | `llama_model_file`, `llama_port`, `llama_extra_args` | `enroll-inference-node.yml -e` | Serving config for [`llama_server`](roles/llama_server.md). |
 
 Anything a node needs that cannot be written as one of these is a **gap**: it
 is named in the role's doc, not handed over as a runbook step. Known gaps
 today: Secure Boot must be off in firmware (NVIDIA), llama.cpp builds from
-HEAD rather than a recorded ref, the GGUF is staged by hand, and an Intel node
-has no play yet, so it gets key-only SSH (#56) only from `add-github-user.yml`
-until its driver play exists.
+HEAD rather than a recorded ref, the GGUF is staged by hand, and the Intel
+stack's package versions float within LTS 2523 (recorded in every facts
+record, not yet pinned). See each role's doc for the rest.
 
 ### Operator flow
 
@@ -382,7 +383,9 @@ node-config nonint print-node-prep    # paste the output on the new node, as roo
 node-config nonint register q02b 192.168.6.82 nvidia 4   # record it, check SSH, record facts
 node-config nonint health q02b        # record facts again, then check them against the config
 node-config nonint show-nodes         # each node's config, its last facts and health
-ansible-playbook inference.yml --limit q02b              # NVIDIA nodes: nvidia_cuda + llama_server
+ansible-playbook inference.yml --limit q02b              # NVIDIA: nvidia_cuda + llama_server
+node-config nonint set-power-limit q02a 150              # Intel Max: watts per card, before its run
+ansible-playbook inference.yml --limit q02a              # Intel Max: intel_xpu (reboots up to twice)
 ```
 
 **Prepare** prints one block, with CT 100's root public key filled in, that
@@ -399,7 +402,7 @@ packages, every display device `lspci` lists, the GPUs among them from the
 registered vendor (by PCI vendor ID, `gpu_pci_vendor_ids` in
 `group_vars/inference_nodes.yml`, so a VM's own virtual display adapter is not
 counted), the driver's own view and device count (`nvidia-smi` or `xpu-smi`),
-any failed systemd units, and the state of `llama-server.service`. Each run
+the installed versions of the vendor's driver stack (`gpu_stack_packages`), any failed systemd units, and the state of `llama-server.service`. Each run
 writes a timestamped file and `latest.json`, so two runs can be diffed.
 
 **Health Check** ([`node-health.yml`](../ansible/node-health.yml)) records the
@@ -448,7 +451,7 @@ Prepare.
 | `enroll-inference-node.yml` | CT 100 (local) | Record an inference node's config in the runtime inventory, in its vendor group, or drop it (`-e state=absent`). Records only (the engine behind `node-config`'s Register and Remove; [ADR-0014](decisions/0014-node-config.md)) |
 | `node-facts.yml`      | CT 100 → SSH   | Read-only: record each inference node's OS, kernel, held packages, GPUs, driver view, failed units and serving state against its config and `ops_version`, in `/var/lib/corliss-ops/nodes/<node>/` (the engine behind `node-config`'s Register and Collect Facts) |
 | `node-health.yml`     | CT 100 → SSH   | Record the facts, then check each node against its config (GPU count on the bus and in the driver, failed units, serving `/health`); writes `health.json` and fails a node that misses a check (the engine behind `node-config`'s Health Check) |
-| `inference.yml`       | CT 100 → SSH   | Configure the NVIDIA inference nodes (`nvidia_nodes`: key-only SSH, then `nvidia_cuda` + `llama_server`) |
+| `inference.yml`       | CT 100 → SSH   | Configure the inference nodes, one play per vendor group, each starting with key-only SSH: `nvidia_nodes` get `nvidia_cuda` + `llama_server`, `intel_xpu_nodes` get `intel_xpu` |
 | `add-github-user.yml` | CT 100 (local) + SSH | Create a human admin account from GitHub keys, with sudo, on CT 100 + inference nodes, and turn off password SSH there (#56) |
 | `backup.yml`          | CT 100 (local) | Install restic + a daily timer backing up control-node runtime state to the object store |
 
@@ -475,7 +478,7 @@ PATH when the control node is configured. The convention:
 | `scn-config` | Menu-driven cluster configuration, in the order a new cluster needs it: configure the control node and check the API token, record the [cluster settings](#cluster-settings) (Proxmox host name, domain, membership registry, scn-chat admin key), assign each service its CTID ([Service CTID assignment](#service-ctid-assignment)), provision the assigned services in dependency order, manage the cluster's admins, set the outbound mail relay, set the [TLS mode](#cluster-tls-mode), rotate signing keys, choose which release scn-chat and Corliss deploy, and install the monitoring agents | [`assign.yml`](#playbooks), [`provision.yml`](#playbooks), [`admins.yml`](#playbooks), [`set-smtp.yml`](#playbooks), [`set-scn-chat-key.yml`](#playbooks), [`rotate-key.yml`](#playbooks), [`set-version.yml`](#playbooks), [`monitor-agent.yml`](#playbooks), and `site.yml`, `verify-proxmox.yml`, `set-domain.yml`, `set-handle-domain.yml`, `set-registry.yml`, `set-node.yml`, `set-tls.yml` |
 | `scn-config nonint <command>` | The same, scripted: `setup`; `show-proxmox-host`, `set-proxmox-host <name>`; `show-domain`, `set-domain <domain>`, `set-handle-domain <domain> [--no-cluster-domain]`, `clear-handle-domain`; `show-registry`, `set-registry <client_key\|service_did> <value>`; `show-ctid`, `assign-ctid <service> <ctid>`, `assign-ctid-defaults`; `show-admins`, `add-admin <handle-or-did> [--admit] [--tier T]`, `remove-admin <handle-or-did>`, `apply-admins [corliss] [pds] [beszel]` (gives the roster as it stands to everything that keeps a copy; all of them when none is named); `show-smtp`, `set-smtp` (URL on stdin), `clear-smtp`; `show-scn-chat-key`, `set-scn-chat-key` (key on stdin), `clear-scn-chat-key`; `show-tls`, `set-tls <acme\|none> [email]`; `set-alert-email <address>`, `clear-alert-email`; `apply-monitor-agents [host…]` (every host when none is named), `print-monitor-agent-install <machine>` (a root install script for an inference node, on stdout) | the same playbooks |
 | `node-config` | Menu-driven inference node configuration: print the block that prepares a new node, register a node (name, address, GPU vendor and count) and record its facts, list each node's config against its last facts, check every node against its config, collect facts again, remove a node. See [Inference nodes](#inference-nodes) and [ADR-0014](decisions/0014-node-config.md) | [`enroll-inference-node.yml`](#playbooks), [`node-facts.yml`](#playbooks), [`node-health.yml`](#playbooks) |
-| `node-config nonint <command>` | The same, scripted: `print-node-prep`; `register <name> <address> <nvidia\|intel> [gpu_count]`; `show-nodes`; `health [node…]` and `collect-facts [node…]` (every node when none is named); `remove <name>` | the same playbooks |
+| `node-config nonint <command>` | The same, scripted: `print-node-prep`; `register <name> <address> <nvidia\|intel> [gpu_count]`; `show-nodes`; `health [node…]` and `collect-facts [node…]` (every node when none is named); `set-power-limit <name> <watts>`; `remove <name>` | the same playbooks |
 | `zai-backup [run]` | Run the control-node backup (also the timer's `ExecStart`) | restic |
 | `zai-backup <restic subcmd>` | Ad-hoc query/restore against the repo (`snapshots`, `check`, `restore …`) | restic |
 | `zai-autodeploy run` | Provision each app set to `latest` whose newest release tag isn't deployed yet (also the timer's `ExecStart`, every minute). See [ADR-0013](decisions/0013-autodeploy-on-a-timer.md) | [`set-version.yml`](#playbooks), [`provision.yml`](#playbooks) |
@@ -514,6 +517,7 @@ the API token and has no SSH path to the host, so anything needing host accounts
 | [`control_node`](roles/control_node.md)    | CT 100     | Base config for the Ansible control node                |
 | [`proxy`](roles/proxy.md)                  | `proxy`    | Caddy reverse proxy — the LAN-facing edge; single apt package, git-tracked routes |
 | [`nvidia_cuda`](roles/nvidia_cuda.md)      | `nvidia_nodes` | NVIDIA driver + CUDA toolkit (Debian 13) |
+| [`intel_xpu`](roles/intel_xpu.md)          | `intel_xpu_nodes` | Intel Max 1100 on Ubuntu 24.04: pinned 6.8 kernel, LTS 2523 stack, i915 loaded by `scn-pvc-init`, power cap by `scn-pvc-powercap` |
 | [`llama_server`](roles/llama_server.md)    | `nvidia_nodes` | Build llama.cpp (CUDA) + install the `llama-server` unit |
 | [`github_user`](roles/github_user.md)      | CT 100 + inference nodes | Create a human admin account from GitHub public keys, with sudo. For the Proxmox host itself, see [Host scripts](#host-scripts) |
 | [`object_store`](roles/object_store.md)    | `object-store` | Single-node Garage (S3-compatible) — the on-box backup target |
