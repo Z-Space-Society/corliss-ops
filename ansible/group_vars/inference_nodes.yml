@@ -24,3 +24,5 @@ gpu_stack_packages:
     - libze1
     - libze-intel-gpu1
     - intel-opencl-icd
+    - libze-dev
+    - libigc-dev

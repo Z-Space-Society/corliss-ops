@@ -370,9 +370,9 @@ A node is recreated from three things, as everything in corliss-ops is
 Anything a node needs that cannot be written as one of these is a **gap**: it
 is named in the role's doc, not handed over as a runbook step. Known gaps
 today: Secure Boot must be off in firmware (NVIDIA), llama.cpp builds from
-HEAD rather than a recorded ref, the GGUF is staged by hand, and the Intel
-stack's package versions float within LTS 2523 (recorded in every facts
-record, not yet pinned). See each role's doc for the rest.
+HEAD rather than a recorded ref, and the GGUF is staged by hand. The Intel
+stack is pinned to Q01's exact versions (`gpu_stack_pins`); the NVIDIA stack
+takes Debian's current packages. See each role's doc for the rest.
 
 ### Operator flow
 
@@ -408,8 +408,9 @@ writes a timestamped file and `latest.json`, so two runs can be diffed.
 **Health Check** ([`node-health.yml`](../ansible/node-health.yml)) records the
 facts, then judges them against the config. A node passes when its config has
 a `gpu_count`, `lspci` and the driver both see that many of its vendor's GPUs,
-no unit has failed, and the serving unit, once installed, is active and
-answers `/health` with 200. Each node gets a Summary of PASS/FAIL lines, the
+no unit has failed, the serving unit, once installed, is active and answers
+`/health` with 200, and the driver stack is at the versions its vendor group
+pins (`gpu_stack_pins`), where there are pins. Each node gets a Summary of PASS/FAIL lines, the
 result goes to `health.json` beside the facts, and a failing node fails the
 run. A node with no driver yet fails, which is the point: it is not ready.
 
