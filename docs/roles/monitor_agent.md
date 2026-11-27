@@ -113,7 +113,7 @@ The host isn't an Ansible target, so it runs
 own clone (step 6):
 
 ```sh
-/opt/corliss-ops/host/install-monitor-agent.sh [control-ctid]   # default 100
+/root/corliss-ops/host/install-monitor-agent.sh [control-ctid]   # default 100
 ```
 
 - **It reads CT 100's values as data and never runs anything CT 100 produces.**
@@ -172,7 +172,7 @@ From CT 100, every system the hub knows, whether it is up, how fresh its record
 is, and its pending updates as `[total, security]`:
 
 ```sh
-D=$(awk '$1=="cluster_domain:"{print $2}' /opt/zai-ops/ansible/inventory/local.yml)
+D=$(awk '$1=="cluster_domain:"{print $2}' /opt/corliss-ops/ansible/inventory/local.yml)
 D=$D python3 - <<'EOF'
 import json, os, urllib.request
 from datetime import datetime, timezone

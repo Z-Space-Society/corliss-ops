@@ -22,14 +22,14 @@ itself from this repo.
 
    ```bash
    apt-get update; apt-get install -y git   # 401s from the enterprise repo are expected; the bootstrap disables it
-   git clone https://github.com/Z-Space-Society/corliss-ops.git /opt/corliss-ops
-   /opt/corliss-ops/host/bootstrap.sh
+   git clone https://github.com/Z-Space-Society/corliss-ops.git /root/corliss-ops
+   /root/corliss-ops/host/bootstrap.sh
    ```
 
    to override the CT ID (default 100), pass it as an argument:
 
    ```bash
-   /opt/corliss-ops/host/bootstrap.sh 199
+   /root/corliss-ops/host/bootstrap.sh 199
    ```
 
    The script prints a **vault password** on its last line. Back it up
@@ -114,7 +114,7 @@ itself from this repo.
    first failure. By hand:
 
    ```bash
-   cd /opt/zai-ops/ansible
+   cd /opt/corliss-ops/ansible
    # provision each — create over the API, configure over SSH.
    #    object store first: it's the restic backend the backup job writes to.
    #    postgres before happyview/litellm/scn-notes/corliss/open-webui —
@@ -186,7 +186,7 @@ itself from this repo.
    only adds keys that are new on GitHub:
 
    ```bash
-   /opt/corliss-ops/host/import-github-user.sh jsayles bmann
+   /root/corliss-ops/host/import-github-user.sh jsayles bmann
    ```
 
 8. Keep the service containers' Debian packages current. Check first, then
@@ -244,7 +244,7 @@ architecture, networking, and a note for every role.
 
 ## Structure
 
-- `host/`: scripts run as root on the Proxmox host, from its clone at `/opt/corliss-ops`
+- `host/`: scripts run as root on the Proxmox host, from its clone at `/root/corliss-ops`
   - `bootstrap.sh`: creates CT 100 (the host entry point)
   - `import-github-user.sh`: creates a sudo account on the host from GitHub keys
 - `ansible/`

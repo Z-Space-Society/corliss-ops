@@ -29,8 +29,10 @@ When adding anything, answer: where is each new decision stored, who sets it,
 and do backups cover it?
 
 **Naming:** new things get corliss-ops names (`node-config`, `ops_version`,
-`/var/lib/corliss-ops`). Existing `zai` names stay until renaming one is cheap
-and contained; the `zai_ops` key in manifests stays because Corliss reads it.
+`/var/lib/corliss-ops`, the checkouts at `/opt/corliss-ops` and
+`/root/corliss-ops`). Existing `zai` names (`zai-backup`, `/root/.zai-secrets`,
+the buckets) stay until renaming one is cheap and contained; the `zai_ops` key
+in manifests stays because Corliss reads it (#102).
 
 ## Documentation maintenance (IMPORTANT)
 
@@ -59,11 +61,10 @@ These are settled. Don't silently reverse them; if a change requires it, call it
 out and update the docs.
 
 - **Host scripts from a host clone, then Ansible.** The operator installs git on
-  the Proxmox host and clones this repo to `/opt/corliss-ops` there, the one
-  manual step (`/root/zai-ops` on hosts cloned before 2026-11-27, such as
-  Heron; nothing reads the location, so both work). Deliberately not
-  `/opt/zai-ops`, which is CT 100's clone, so the two are never mistaken for
-  each other. `host/bootstrap.sh` (run as root) builds CT 100, the Ansible control
+  the Proxmox host and clones this repo to `/root/corliss-ops` there, the one
+  manual step (`/root/zai-ops` on hosts cloned before #101; nothing reads the
+  host clone's location, so both work). Deliberately not `/opt/corliss-ops`,
+  which is CT 100's clone, so the two are never mistaken for each other. `host/bootstrap.sh` (run as root) builds CT 100, the Ansible control
   node; everything after is driven by Ansible *from inside CT 100*. Anything else
   that must run on the host itself (`host/import-github-user.sh`,
   `host/install-monitor-agent.sh`) lives beside it
@@ -171,7 +172,7 @@ out and update the docs.
 - **Operator commands live in `bin/`, run in place from git.** Things a human runs
   by hand on CT 100 (`scn-config`, `node-config`, `zai-backup`) live in the repo's `bin/` (scripts
   that run on the Proxmox host go in `host/` instead), put on PATH via
-  two hooks — `/etc/profile.d/zai-ops.sh` for login/ssh shells, and the same
+  two hooks — `/etc/profile.d/corliss-ops.sh` for login/ssh shells, and the same
   snippet sourced from `/etc/bash.bashrc` for the interactive *non-login* shell
   `pct enter` gives (profile.d alone leaves `zai-*` not-found there; see Known
   gotchas). Seeded by `bootstrap.sh` so a fresh `pct enter` works pre-Ansible,

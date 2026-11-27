@@ -139,13 +139,13 @@ flowchart LR
 
     subgraph phase1["1 · on the host, as root: clone, then host/bootstrap.sh"]
         direction TB
-        b0["apt install git, the one manual step<br/>clone corliss-ops to /opt/corliss-ops on the host"]
+        b0["apt install git, the one manual step<br/>clone corliss-ops to /root/corliss-ops on the host"]
         b1["apt repos, full-upgrade, suppress subscription nag"]
         b0 --> b1
         b2["create vmbr1 10.1.1.0/24, no uplink<br/>host at 10.1.1.1 + NAT masquerade"]
         b3["fetch debian-13-standard template"]
         b4["create CT 100 ansible-control<br/>vmbr1 only at 10.1.1.100, no LAN NIC"]
-        b5["locale, ansible + git, clone repo to /opt/zai-ops<br/>pin community.proxmox 1.6.0 or newer, bin/ on PATH"]
+        b5["locale, ansible + git, clone repo to /opt/corliss-ops<br/>pin community.proxmox 1.6.0 or newer, bin/ on PATH"]
         b6["mint ansible@pve API token + ZaiProvision role<br/>write encrypted vault, print vault password"]
         b7["record proxmox_node_name from hostname"]
         b1 --> b2 --> b3 --> b4 --> b5 --> b6 --> b7

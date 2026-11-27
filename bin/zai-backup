@@ -22,7 +22,7 @@ source /etc/zai-backup/restic.env
 # Always backed up: small but unreproducible runtime state. Losing it turns a
 # reflash from "lost cluster" into "repo + restored state".
 backup_paths=(
-  /opt/zai-ops/ansible/group_vars/all/vault.yml   # Proxmox API token (encrypted)
+  /opt/corliss-ops/ansible/group_vars/all/vault.yml   # Proxmox API token (encrypted)
   /root/.vault_pass                               # vault password (host root = trust boundary)
   /root/.ssh/id_ed25519                           # key injected into every service CT
   /root/.ssh/id_ed25519.pub
@@ -33,7 +33,7 @@ backup_paths=(
 # nodes directory is node-config's facts history, the record of what each node
 # ran against that config (ADR-0014).
 backup_optional_paths=(
-  /opt/zai-ops/ansible/inventory/local.yml
+  /opt/corliss-ops/ansible/inventory/local.yml
   /var/lib/corliss-ops/nodes
 )
 # restic forget --prune retention, applied after each run.

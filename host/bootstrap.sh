@@ -8,8 +8,8 @@
 # (ADR-0008). Everything after the control node exists is driven by Ansible from
 # inside it.
 #
-# /opt/corliss-ops/host/bootstrap.sh		#  Will create CT 100
-# /opt/corliss-ops/host/bootstrap.sh 199	#  Will create CT 199
+# /root/corliss-ops/host/bootstrap.sh		#  Will create CT 100
+# /root/corliss-ops/host/bootstrap.sh 199	#  Will create CT 199
 set -euo pipefail
 
 # --- Pretty output ---------------------------------------------------------
@@ -247,7 +247,11 @@ pct exec "$CTID" -- bash -c "
   # CTIDs from a fresh \`pct enter\` before site.yml; the control_node role
   # re-asserts it.
   apt-get -qq -y install ansible git whiptail
-  [ -d /opt/zai-ops ] || git clone --quiet $REPO_URL /opt/zai-ops
+  # A control node built before #101 has its checkout, with the vault and the
+  # runtime inventory in it, at /opt/zai-ops. Move it rather than clone a fresh
+  # one beside it, which would mint a second token and lose local.yml.
+  if [ -d /opt/zai-ops ] && [ ! -e /opt/corliss-ops ]; then mv /opt/zai-ops /opt/corliss-ops; fi
+  [ -d /opt/corliss-ops ] || git clone --quiet $REPO_URL /opt/corliss-ops
   # community.proxmox >=1.6.0 is what CT 100 uses to build every other CT over the
   # API, so it's as fundamental as Ansible itself and installed right here. Debian's
   # ansible 12 bundles 1.3.0, which can't set the API read timeout — the LXC-create
@@ -256,7 +260,7 @@ pct exec "$CTID" -- bash -c "
   # search path); --upgrade makes galaxy honour the version range over the bundled
   # 1.3.0. Seeded here so provision.yml works straight after bootstrap, before
   # site.yml; the control_node role re-asserts it (seed-then-own, like the locale).
-  ansible-galaxy collection install -r /opt/zai-ops/ansible/requirements.yml --upgrade
+  ansible-galaxy collection install -r /opt/corliss-ops/ansible/requirements.yml --upgrade
   # Put the repo's operator commands (scn-config, zai-backup, …) on PATH so a
   # fresh \`pct enter $CTID\` can run them by name before site.yml has run. The
   # control_node role re-asserts these idempotently (seeded here, owned by Ansible
@@ -265,14 +269,14 @@ pct exec "$CTID" -- bash -c "
   # *non-login* shell \`pct enter\` gives, which skips profile.d. The case-guard
   # stops nested shells from re-prepending and growing PATH.
   printf '%s\n' \
-    '# Managed by zai-ops (bootstrap + control_node role).' \
+    '# Managed by corliss-ops (bootstrap + control_node role).' \
     'case \":\$PATH:\" in' \
-    '  *:/opt/zai-ops/bin:*) ;;' \
-    '  *) export PATH=\"/opt/zai-ops/bin:\$PATH\" ;;' \
+    '  *:/opt/corliss-ops/bin:*) ;;' \
+    '  *) export PATH=\"/opt/corliss-ops/bin:\$PATH\" ;;' \
     'esac' \
     '# Land in the repo on a fresh login/pct-enter, without moving a shell' \
     '# that has already navigated elsewhere.' \
-    '[ \"\$PWD\" = \"\$HOME\" ] && [ -d /opt/zai-ops ] && cd /opt/zai-ops' \
+    '[ \"\$PWD\" = \"\$HOME\" ] && [ -d /opt/corliss-ops ] && cd /opt/corliss-ops' \
     '# An operator SSH session can forward a locale this container lacks, and' \
     '# Ansible then refuses to start. Fall back to C.UTF-8, which is always there.' \
     'if locale 2>&1 >/dev/null | grep -q Cannot; then' \
@@ -280,9 +284,9 @@ pct exec "$CTID" -- bash -c "
     '    LC_MONETARY LC_PAPER LC_NAME LC_ADDRESS LC_TELEPHONE LC_MEASUREMENT \' \
     '    LC_IDENTIFICATION' \
     '  export LANG=C.UTF-8' \
-    'fi' > /etc/profile.d/zai-ops.sh
-  grep -q '/etc/profile.d/zai-ops.sh' /etc/bash.bashrc || \
-    printf '%s\n' '[ -r /etc/profile.d/zai-ops.sh ] && . /etc/profile.d/zai-ops.sh' >> /etc/bash.bashrc
+    'fi' > /etc/profile.d/corliss-ops.sh
+  grep -q '/etc/profile.d/corliss-ops.sh' /etc/bash.bashrc || \
+    printf '%s\n' '[ -r /etc/profile.d/corliss-ops.sh ] && . /etc/profile.d/corliss-ops.sh' >> /etc/bash.bashrc
 "
 done_ok "control node provisioned"
 
@@ -294,7 +298,7 @@ done_ok "control node provisioned"
 step "Minting Proxmox API token + vault"
 PROVISIONED=0
 VAULT_PASS=""
-if ! pct exec "$CTID" -- test -f /opt/zai-ops/ansible/group_vars/all/vault.yml; then
+if ! pct exec "$CTID" -- test -f /opt/corliss-ops/ansible/group_vars/all/vault.yml; then
   ROLE=ZaiProvision
   TOKEN_USER=ansible@pve
   TOKEN_ID=provision
@@ -337,7 +341,7 @@ if ! pct exec "$CTID" -- test -f /opt/zai-ops/ansible/group_vars/all/vault.yml; 
   pct exec "$CTID" -- bash -c '
     set -e
     umask 077
-    cd /opt/zai-ops/ansible
+    cd /opt/corliss-ops/ansible
     mkdir -p group_vars/all
     # Write plaintext to a temp file and encrypt it INTO the final path with
     # --output, so vault.yml only exists if encryption succeeded (a half-done
@@ -370,7 +374,7 @@ fi
 # recorded value already matches.
 step "Recording the Proxmox node name"
 PVE_NODE=$(hostname)
-pct exec "$CTID" -- bash -c "cd /opt/zai-ops/ansible && ansible-playbook set-node.yml -e node='$PVE_NODE'"
+pct exec "$CTID" -- bash -c "cd /opt/corliss-ops/ansible && ansible-playbook set-node.yml -e node='$PVE_NODE'"
 done_ok "proxmox_node_name → $PVE_NODE"
 
 # --- Done ---
@@ -384,7 +388,7 @@ echo "  scn-config                                           # the menu; work do
 echo "                                                       #   1 Control Node Setup    configure this node, confirm the API token"
 echo "                                                       #   2 Cluster Settings      the public base domain, the membership registry"
 echo "                                                       #   3 Container Assignment  every service its container ID (creates nothing)"
-echo "  cd /opt/zai-ops/ansible"
+echo "  cd /opt/corliss-ops/ansible"
 echo "  ansible-playbook provision.yml --limit object-store  # then provision each: create + configure"
 echo "  ansible-playbook provision.yml --limit postgres"
 echo "  ansible-playbook provision.yml --limit proxy"

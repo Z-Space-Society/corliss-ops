@@ -76,7 +76,7 @@ manifest_reader_access_key: "GK{{ lookup('ansible.builtin.password', _zai_secret
 manifest_reader_secret_key: "{{ lookup('ansible.builtin.password', _zai_secrets_dir ~ '/manifest_reader_secret_key chars=digits,abcdef length=64') }}"
 
 # The corliss-ops revision a service manifest or a node facts record carries:
-# the control node's own checkout (/opt/zai-ops on CT 100), read at the moment
+# the control node's own checkout (/opt/corliss-ops on CT 100), read at the moment
 # the play runs. --dirty is the
 # point, not decoration: a "-dirty" suffix means the blueprint was hand-edited on
 # CT 100, which breaks "the artifact is the repo", and /systems/ should say so.
