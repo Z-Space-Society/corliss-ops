@@ -478,6 +478,15 @@ Hard-won lessons provisioning **human accounts** (`add-github-user.yml`):
   `00-corliss-ops.conf` ([#56](https://github.com/Z-Space-Society/corliss-ops/issues/56)).
   `sshd -T | grep -i passwordauthentication` shows the value sshd actually
   uses.
+- **Never reload a socket-activated sshd.** Where `ssh.socket` owns port 22
+  (Debian 13's CT template, Ubuntu 24.04; `systemctl status ssh` shows
+  `TriggeredBy: ssh.socket`), `systemctl reload ssh` sends SIGHUP, sshd
+  re-execs and tries to bind :22 itself, finds the socket holding it, logs
+  "fatal: Cannot bind any address" and exits. The unit is left failed and
+  `/run/sshd` is gone, so `sshd -T` then fails too. Use `systemctl
+  try-restart ssh.service`: the restart is handed the socket, and
+  `KillMode=process` keeps open sessions. Recover a dead one with `systemctl
+  reset-failed ssh.service && systemctl start ssh.service`.
 - **Set passwords with `chpasswd`, not `password_hash`.** Debian 13's Python 3.13
   removed the stdlib `crypt` module Ansible's `password_hash` filter used;
   `chpasswd` on the target uses libc crypt instead, so no `python3-passlib` on
