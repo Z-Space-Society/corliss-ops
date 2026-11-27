@@ -94,6 +94,11 @@ out and update the docs.
   out via the host.
 - **SSH into service CTs via an injected key.** CT 100's root ed25519 public key
   is injected at create time; key-only root login. No per-CT passwords.
+- **No password SSH anywhere Ansible reaches (#56).** `tasks/sshd_keys_only.yml`
+  installs `/etc/ssh/sshd_config.d/00-corliss-ops.conf` (named `00-` so it
+  beats `50-cloud-init.conf`; sshd keeps the first value). Included by the
+  `control_node` role, `add-github-user.yml` and every inference node play; a
+  new node play includes it too. Sudo accounts keep a password for sudo only.
 - **Admins live in one place: the public roster record.** It sits in the
   `scn_service_did` account's repo and only Corliss writes it. zai-ops stores
   no admin list: `admins.yml` runs Corliss's commands, and the PDS's

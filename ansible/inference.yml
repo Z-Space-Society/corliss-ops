@@ -19,6 +19,9 @@
   hosts: nvidia_nodes
   remote_user: ansible
   become: true
+  pre_tasks:
+    - name: Turn off password SSH logins
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/sshd_keys_only.yml"
   roles:
     - nvidia_cuda
     - llama_server

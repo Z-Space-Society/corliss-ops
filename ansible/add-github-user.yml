@@ -16,3 +16,8 @@
   become: true
   roles:
     - github_user
+  tasks:
+    # The account gets a temp password for PAM's forced change and for sudo;
+    # it must never open SSH (#56).
+    - name: Turn off password SSH logins
+      ansible.builtin.include_tasks: "{{ playbook_dir }}/tasks/sshd_keys_only.yml"

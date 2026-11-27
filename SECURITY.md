@@ -46,10 +46,11 @@ on the box, `0600`, no manual entry required.
 - **Edge-blocked paths**: the proxy answers 404 for upstream paths meant only
   for inside the cluster: Corliss's `/admin/` and `/membership/events`, the sync
   relay's `/internal/*`, and the Beszel hub's superuser surfaces.
-- **SSH logins**: root is key-only everywhere, the Proxmox hosts included.
-  Human admins get a sudo account from their GitHub keys (`github_user`);
-  password SSH is still on for those accounts
-  ([#56](https://github.com/Z-Space-Society/zai-ops/issues/56)).
+- **SSH logins**: key-only everywhere Ansible reaches. Root is key-only on
+  every machine, the Proxmox hosts included. On CT 100 and the inference nodes,
+  `tasks/sshd_keys_only.yml` turns password SSH off for every account; the
+  human admins' sudo accounts (`github_user`) keep a password only for sudo
+  ([#56](https://github.com/Z-Space-Society/corliss-ops/issues/56)).
 
 ## What the cluster trusts outside itself
 
