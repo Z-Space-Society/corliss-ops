@@ -1,6 +1,6 @@
 ---
 # Schedule a recurring backup of the control node's runtime state to the cluster
-# object store. The backup logic is /opt/zai-ops/bin/zai-backup (in git, on
+# object store. The backup logic is /opt/corliss-ops/bin/zai-backup (in git, on
 # PATH) — this role only installs restic, renders the secret env, and wires up
 # the systemd timer. Nothing is copied out of the repo, so a `git pull` makes
 # script/config changes live without re-running this play.
@@ -32,7 +32,7 @@
 
 # Symlink (not copy) the systemd units from the repo so editing them in git and
 # pulling makes the change live after a daemon-reload — no re-render. ExecStart
-# already points at /opt/zai-ops/bin/zai-backup, so behaviour changes need
+# already points at /opt/corliss-ops/bin/zai-backup, so behaviour changes need
 # neither this play nor a reload, just a pull.
 - name: Symlink the backup systemd units into place
   ansible.builtin.file:
@@ -56,7 +56,7 @@
 # uninitialised repo) fails the play instead of silently waiting for 03:00.
 - name: Run an initial backup
   ansible.builtin.command:
-    cmd: /opt/zai-ops/bin/zai-backup run
+    cmd: /opt/corliss-ops/bin/zai-backup run
   register: backup_initial
   changed_when: true
   when: backup_run_now | bool

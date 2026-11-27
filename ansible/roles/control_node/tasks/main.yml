@@ -96,20 +96,20 @@
 # role — same seed-then-own pattern as the locale above.
 - name: Put the repo's bin/ on PATH (login shells via /etc/profile.d)
   ansible.builtin.copy:
-    dest: /etc/profile.d/zai-ops.sh
+    dest: /etc/profile.d/corliss-ops.sh
     owner: root
     group: root
     mode: "0644"
     # Guard against re-prepending in nested shells so PATH doesn't grow.
     content: |
-      # Managed by zai-ops. Operator commands (scn-config, zai-backup) live in the repo.
+      # Managed by corliss-ops. Operator commands (scn-config, zai-backup) live in the repo.
       case ":$PATH:" in
-        *:/opt/zai-ops/bin:*) ;;
-        *) export PATH="/opt/zai-ops/bin:$PATH" ;;
+        *:/opt/corliss-ops/bin:*) ;;
+        *) export PATH="/opt/corliss-ops/bin:$PATH" ;;
       esac
       # Land in the repo on a fresh login/pct-enter, without moving a shell
       # that has already navigated elsewhere.
-      [ "$PWD" = "$HOME" ] && [ -d /opt/zai-ops ] && cd /opt/zai-ops
+      [ "$PWD" = "$HOME" ] && [ -d /opt/corliss-ops ] && cd /opt/corliss-ops
       # An operator's SSH session can forward a locale this container doesn't
       # have (sshd's AcceptEnv LANG LC_*, kept through sudo and pct enter), and
       # Ansible then refuses to start. Fall back to C.UTF-8, which is always there.
@@ -126,9 +126,30 @@
 - name: Put the repo's bin/ on PATH (interactive non-login shells via /etc/bash.bashrc)
   ansible.builtin.blockinfile:
     path: /etc/bash.bashrc
-    marker: "# {mark} ANSIBLE MANAGED — zai-ops PATH"
+    marker: "# {mark} ANSIBLE MANAGED — corliss-ops PATH"
     block: |
-      [ -r /etc/profile.d/zai-ops.sh ] && . /etc/profile.d/zai-ops.sh
+      [ -r /etc/profile.d/corliss-ops.sh ] && . /etc/profile.d/corliss-ops.sh
+
+# The hook was zai-ops.sh until the checkout moved to /opt/corliss-ops (#101).
+# Left behind it would put the old, now-missing bin/ on PATH and try to cd
+# there, so a control node built before the move loses all three pieces: the
+# file, this role's old bashrc block, and the line bootstrap.sh appended.
+- name: Remove the old zai-ops PATH hook
+  ansible.builtin.file:
+    path: /etc/profile.d/zai-ops.sh
+    state: absent
+
+- name: Remove the old zai-ops bashrc block
+  ansible.builtin.blockinfile:
+    path: /etc/bash.bashrc
+    marker: "# {mark} ANSIBLE MANAGED — zai-ops PATH"
+    state: absent
+
+- name: Remove the old zai-ops bashrc line bootstrap.sh appended
+  ansible.builtin.lineinfile:
+    path: /etc/bash.bashrc
+    line: "[ -r /etc/profile.d/zai-ops.sh ] && . /etc/profile.d/zai-ops.sh"
+    state: absent
 
 # Home for auto-generated runtime secrets (object-store key, restic repo
 # password, …). The `password` lookup writes them here on first use; creating it

@@ -7,4 +7,4 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/zai-ops/bin/zai-backup run
+ExecStart=/opt/corliss-ops/bin/zai-backup run

@@ -4,7 +4,7 @@
 # This role only holds the values needed to render the secret env file and run
 # the timer. The backup *behaviour* — what paths to capture, retention, the
 # postgres toggle, the schedule — lives in git, not here:
-#   - paths / retention / postgres on-off → /opt/zai-ops/bin/zai-backup (config block)
+#   - paths / retention / postgres on-off → /opt/corliss-ops/bin/zai-backup (config block)
 #   - schedule (OnCalendar)               → roles/backup/files/zai-backup.timer
 # Edit those and `git pull`; no need to re-run this play (the timer schedule also
 # needs `systemctl daemon-reload`). See docs/roles/backup.md.

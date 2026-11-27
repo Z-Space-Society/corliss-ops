@@ -48,13 +48,12 @@ Base Proxmox does not ship git, which is why the curl form existed.
   On a fresh host the enterprise repo is still enabled and 401s during that
   update. The bootstrap disables it.
 
-  **2026-11-27: the host clone moves to `/opt/corliss-ops`.** The repo is now
-  corliss-ops, and a different name answers the reason above: `/opt/corliss-ops`
-  on the host can't be mistaken for `/opt/zai-ops` in CT 100. New hosts (Q02
-  first) clone there. Every `host/` script runs by path and `bootstrap.sh`
-  clones CT 100's copy from GitHub itself, so nothing reads the host clone's
-  location, and a host already cloned at `/root/zai-ops` (Heron) keeps working
-  as it is. See [ADR-0014](0014-node-config.md) for the naming direction.
+  **2026-11-27: both clones follow the repo's rename (#101).** The host clone
+  is `/root/corliss-ops` and CT 100's is `/opt/corliss-ops`, so the reason
+  above still holds: they never share a path. `bootstrap.sh` moves a CT 100
+  checkout still at `/opt/zai-ops` rather than cloning beside it. Nothing reads
+  the host clone's location, so a host still cloned at `/root/zai-ops` keeps
+  working.
 
 - **Scripts that run on the Proxmox host live in `host/`**, run as root by path.
   They are not put on PATH. The first two are `host/bootstrap.sh` (moved from the

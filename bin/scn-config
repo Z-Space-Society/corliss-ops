@@ -49,7 +49,7 @@
 #                                                #   agent token)
 #
 # Runs on the control node. Lives in the repo's bin/ (on PATH via
-# /etc/profile.d/zai-ops.sh) and runs in place — the script you run is always the
+# /etc/profile.d/corliss-ops.sh) and runs in place — the script you run is always the
 # one in git, no installed copy to drift.
 #
 # This is the front end only. The playbooks (site.yml, verify-proxmox.yml,
@@ -62,14 +62,14 @@ set -euo pipefail
 # cd to the ansible dir (sibling of this bin/) so ansible.cfg loads no matter the
 # caller's CWD — it supplies the inventory (relative: inventory/) and the vault
 # password file. Self-locating off this script's path (not hardcoded) so the same
-# script works from any checkout: /opt/zai-ops on the box, a dev tree elsewhere.
+# script works from any checkout: /opt/corliss-ops on the box, a dev tree elsewhere.
 cd "$(dirname "$(readlink -f "$0")")/../ansible"
 
 TITLE="SCN Configuration Tool (scn-config)"
 # The same `git describe` the service manifests record (ops_version in
 # group_vars/all/main.yml), so the version here and on Corliss's /systems/ agree.
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
-BACKTITLE="Shared Computer Network — $(hostname) — zai-ops $VERSION"
+BACKTITLE="Shared Computer Network — $(hostname) — corliss-ops $VERSION"
 
 # Shown wherever a recorded assignment could be changed. The CTID is the
 # container's VMID and its address, so this is a migration, not a setting.

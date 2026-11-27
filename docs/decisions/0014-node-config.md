@@ -74,10 +74,11 @@ control node from the usual bootstrap.
    node's counterpart to installing git on a Proxmox host (ADR-0008).
 
 7. **New names are corliss-ops names.** Anything added here is named for
-   corliss-ops (`node-config`, `ops_version`, `/var/lib/corliss-ops`, the host
-   clone at `/opt/corliss-ops`). Existing `zai` names (`/opt/zai-ops` in CT
-   100, `zai-backup`, the `zai_ops` key Corliss reads in manifests) stay until
-   renaming one is cheap and contained.
+   corliss-ops (`node-config`, `ops_version`, `/var/lib/corliss-ops`). The
+   checkouts follow the repo's rename in #101: `/opt/corliss-ops` in CT 100 and
+   `/root/corliss-ops` on the host. Other `zai` names (`zai-backup`, the
+   `zai_ops` key Corliss reads in manifests) stay until renaming one is cheap
+   and contained.
 
 ## Consequences
 

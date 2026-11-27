@@ -114,7 +114,7 @@ From [`group_vars/all/main.yml`](../../ansible/group_vars/all/main.yml):
 | -------- | ------- |
 | `manifest_bucket` | `zai-manifests`. Shared with `object_store` (creates it) and `corliss` (reads it). |
 | `manifest_writer_access_key` / `manifest_writer_secret_key` | Generated under `/root/.zai-secrets`. Read and write on `zai-manifests` only. |
-| `ops_version` | `git describe --tags --always --dirty` of `/opt/zai-ops`. `-dirty` means the blueprint was hand-edited on CT 100. |
+| `ops_version` | `git describe --tags --always --dirty` of `/opt/corliss-ops`. `-dirty` means the blueprint was hand-edited on CT 100. |
 
 ## Dependencies
 
@@ -129,7 +129,7 @@ From [`group_vars/all/main.yml`](../../ansible/group_vars/all/main.yml):
 On CT 100, read one back with the reader key:
 
 ```bash
-cd /opt/zai-ops/ansible
+cd /opt/corliss-ops/ansible
 ansible localhost -m amazon.aws.s3_object -a "mode=getstr bucket=zai-manifests object=redis.json \
   endpoint_url=http://{{ hostvars['object-store'].ansible_host }}:3900 region=garage \
   access_key={{ manifest_reader_access_key }} secret_key={{ manifest_reader_secret_key }}"

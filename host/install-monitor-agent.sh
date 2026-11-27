@@ -3,10 +3,10 @@
 # install-monitor-agent.sh: install or update the Beszel monitoring agent on a
 # machine Ansible doesn't manage (zai-ops#3, step 6). Run as root.
 #
-# On the Proxmox host, from the host's clone of zai-ops:
+# On the Proxmox host, from the host's clone of corliss-ops:
 #
-#   /opt/corliss-ops/host/install-monitor-agent.sh        # control node is CT 100
-#   /opt/corliss-ops/host/install-monitor-agent.sh 199    # or another CTID
+#   /root/corliss-ops/host/install-monitor-agent.sh        # control node is CT 100
+#   /root/corliss-ops/host/install-monitor-agent.sh 199    # or another CTID
 #
 # On an inference node, run the copy CT 100 prints instead, which carries its
 # inputs in a header (MONITOR_AGENT_PRESET=1, below):
@@ -58,11 +58,11 @@ else
   ROLE="$REPO/ansible/roles/monitor_agent"
   ct() { pct exec "$CTID" -- "$@"; }
   # One value from a committed YAML file in CT 100's checkout, quotes dropped.
-  pin() { ct awk -v k="$1:" '$1==k{gsub(/"/, "", $2); print $2}' "/opt/zai-ops/ansible/$2"; }
+  pin() { ct awk -v k="$1:" '$1==k{gsub(/"/, "", $2); print $2}' "/opt/corliss-ops/ansible/$2"; }
 
   # ansible-inventory reads only the inventory, so this carries the hub's CTID
   # and the domain from local.yml and no vault secret.
-  read -r HUB_CTID DOMAIN < <(ct bash -c 'cd /opt/zai-ops/ansible && ansible-inventory --host beszel' \
+  read -r HUB_CTID DOMAIN < <(ct bash -c 'cd /opt/corliss-ops/ansible && ansible-inventory --host beszel' \
     | python3 -c 'import json, sys; v = json.load(sys.stdin); print(v.get("ctid", ""), v.get("cluster_domain", ""))')
   [[ -n "$HUB_CTID" && -n "$DOMAIN" ]] || die "CT $CTID records no CTID for beszel, or no cluster_domain; provision the hub first."
   PORT=$(pin beszel_port group_vars/all/main.yml)
@@ -190,7 +190,7 @@ journalctl -u beszel-agent --since "$SINCE" --no-pager -q | grep -q 'WebSocket c
 # --- Alerts ------------------------------------------------------------------------
 # The hub can only take alerts for a system once it exists, which it now does.
 if [[ -n "$CTID" ]]; then
-  pct exec "$CTID" -- /opt/zai-ops/bin/scn-config nonint apply-monitor-agents beszel \
+  pct exec "$CTID" -- /opt/corliss-ops/bin/scn-config nonint apply-monitor-agents beszel \
     | grep -A4 -E '^fatal|PLAY RECAP'
 else
   echo "Now, on CT 100: scn-config nonint apply-monitor-agents beszel  (puts the alerts on $NAME)"

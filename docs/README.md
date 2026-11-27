@@ -40,10 +40,10 @@ Base Proxmox has no git, so installing it is the one manual step (see
 
 ```bash
 apt-get update; apt-get install -y git   # 401s from the enterprise repo are expected; step 1 disables it
-git clone https://github.com/Z-Space-Society/corliss-ops.git /opt/corliss-ops
-/opt/corliss-ops/host/bootstrap.sh
+git clone https://github.com/Z-Space-Society/corliss-ops.git /root/corliss-ops
+/root/corliss-ops/host/bootstrap.sh
 # override the CT ID (default 100):
-# /opt/corliss-ops/host/bootstrap.sh 199
+# /root/corliss-ops/host/bootstrap.sh 199
 ```
 
 What it does, in order (each phase prints a numbered banner):
@@ -70,7 +70,7 @@ What it does, in order (each phase prints a numbered banner):
    gateway, then drop a `net0` LAN NIC if an older bootstrap left one. CT 100
    has no LAN leg; operators reach it with `pct enter` from the host.
 9. **Provision the control node** — fix the locale (must happen before Ansible
-   can run at all), install `ansible`, `git` and `whiptail`, clone this repo to `/opt/zai-ops`,
+   can run at all), install `ansible`, `git` and `whiptail`, clone this repo to `/opt/corliss-ops`,
    install the pinned Ansible collections (`community.proxmox >=1.6.0`, so
    `provision.yml` works before `site.yml` — the bundled 1.3.0 can't set the API
    timeout), and put the repo's [`bin/`](#operator-commands) on PATH (so a fresh
@@ -93,7 +93,7 @@ scn-config                                      # work down the menu:
                                                 #   2 Cluster Settings      the domain, the membership registry
                                                 #   3 Container Assignment  each service its CTID
                                                 #   4 Provision Containers  create + configure
-cd /opt/zai-ops/ansible
+cd /opt/corliss-ops/ansible
 ansible-playbook provision.yml --limit proxy    # or provision one by hand
 ```
 
@@ -475,8 +475,8 @@ command. Only control-node operator commands belong in `bin/`.
 ### Host scripts
 
 Scripts that must run on the Proxmox host itself live in [`host/`](../host/), run
-as root by path from the host's clone at `/opt/corliss-ops` (`/root/zai-ops` on
-a host cloned before 2026-11-27, such as Heron; both work). They are not on PATH.
+as root by path from the host's clone at `/root/corliss-ops` (`/root/zai-ops` on
+a host cloned before #101; both work). They are not on PATH.
 The split from `bin/` is where the script runs: `bin/` drives Ansible from CT 100,
 while `host/` does what CT 100 can't reach. CT 100 talks to Proxmox only through
 the API token and has no SSH path to the host, so anything needing host accounts,
