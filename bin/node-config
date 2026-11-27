@@ -1,0 +1,368 @@
+#!/usr/bin/env bash
+# node-config — register and record the inference nodes, patterned on scn-config.
+#
+#   node-config                                     # the menu
+#   node-config nonint print-node-prep              # a root block to paste on a new
+#                                                   #   node: the ansible user, its
+#                                                   #   sudo, and this control node's key
+#   node-config nonint register q02b 192.168.6.80 nvidia 2
+#                                                   # record the node (name, address,
+#                                                   #   GPU vendor, GPU count), then
+#                                                   #   check SSH and record its facts
+#   node-config nonint show-nodes                   # each node, its config and last facts
+#   node-config nonint collect-facts [node...]      # record facts again, all or some
+#   node-config nonint remove q02b                  # drop the node's config; its facts
+#                                                   #   history stays
+#
+# An inference node is any machine with GPUs that Ansible reaches over SSH as
+# the `ansible` user: bare metal, or a VM with passed-through cards, treated the
+# same. Its entry in the runtime inventory is its config, and node-config is the
+# only thing that writes it. The facts record is the evidence of what the node
+# was running against that config. See docs/decisions/0014-node-config.md.
+#
+# Runs on the control node, in place from git like scn-config. This is the
+# front end only: enroll-inference-node.yml and node-facts.yml validate and
+# write, and the checks here exist to give a readable message first.
+set -euo pipefail
+
+# The ansible dir beside this bin/, so ansible.cfg (inventory, vault password)
+# loads whatever the caller's CWD.
+cd "$(dirname "$(readlink -f "$0")")/../ansible"
+
+TITLE="Inference Node Configuration (node-config)"
+VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
+BACKTITLE="Shared Computer Network — $(hostname) — corliss-ops $VERSION"
+FACTS_DIR=/var/lib/corliss-ops/nodes
+CONTROL_KEY=/root/.ssh/id_ed25519.pub
+VENDORS="nvidia intel"
+
+die() { echo "node-config: $*" >&2; exit 1; }
+
+usage() {
+  cat >&2 <<'EOF'
+usage: node-config
+       node-config nonint print-node-prep
+       node-config nonint register <name> <address> <nvidia|intel> [gpu_count]
+       node-config nonint show-nodes
+       node-config nonint collect-facts [node...]
+       node-config nonint remove <name>
+EOF
+  exit 64
+}
+
+# --- State -------------------------------------------------------------------
+# Parallel arrays, one entry per registered node, sorted by name. The facts
+# columns come from the node's latest.json and are "" when it has none yet.
+N_NAME=() N_HOST=() N_VENDOR=() N_COUNT=() N_SEEN=() N_PCI=() N_DRIVER=()
+
+# The merged inventory and the facts records in one python3 call: Ansible
+# guarantees python on the control node, and jq is not there before site.yml.
+load_nodes() {
+  local json err name host vendor count seen pci driver
+  err="$(mktemp)"
+  if ! json="$(ansible-inventory --list 2>"$err")"; then
+    cat "$err" >&2; rm -f "$err"
+    die "could not read the inventory (ansible-inventory --list, run in $PWD)"
+  fi
+  rm -f "$err"
+  N_NAME=() N_HOST=() N_VENDOR=() N_COUNT=() N_SEEN=() N_PCI=() N_DRIVER=()
+  while IFS=$'\t' read -r name host vendor count seen pci driver; do
+    N_NAME+=("$name") N_HOST+=("$host") N_VENDOR+=("$vendor") N_COUNT+=("$count")
+    N_SEEN+=("$seen") N_PCI+=("$pci") N_DRIVER+=("$driver")
+  done < <(FACTS_DIR="$FACTS_DIR" python3 -c '
+import json, os, sys
+inv = json.load(sys.stdin)
+hostvars = inv.get("_meta", {}).get("hostvars", {})
+def members(group):
+    g = inv.get(group, {})
+    names = set(g.get("hosts", []))
+    for child in g.get("children", []):
+        names |= members(child)
+    return names
+for name in sorted(members("inference_nodes")):
+    hv = hostvars.get(name, {})
+    seen = pci = driver = ""
+    try:
+        with open(os.path.join(os.environ["FACTS_DIR"], name, "latest.json")) as f:
+            rec = json.load(f)
+        seen = rec.get("collected_at", "")
+        pci = str(len(rec.get("pci_gpus", [])))
+        drv = rec.get("driver") or {}
+        driver = "ok" if drv.get("ok") else "none"
+    except (OSError, ValueError):
+        pass
+    row = [name, hv.get("ansible_host", ""), hv.get("gpu_vendor", ""),
+           str(hv.get("gpu_count", "")), seen, pci, driver]
+    print("\t".join(v or "-" for v in row))
+' <<<"$json")
+  return 0
+}
+
+node_index() {  # node_index <name> — its index in N_*, or fail
+  local i
+  for i in "${!N_NAME[@]}"; do
+    [ "${N_NAME[$i]}" = "$1" ] && { echo "$i"; return 0; }
+  done
+  return 1
+}
+
+nodes_table() {
+  local i
+  printf '  %-10s %-16s %-7s %-4s %-4s %-6s %s\n' Node Address Vendor GPUs PCI Driver "Facts from"
+  printf '  %-10s %-16s %-7s %-4s %-4s %-6s %s\n' ---- ------- ------ ---- --- ------ ----------
+  for i in "${!N_NAME[@]}"; do
+    printf '  %-10s %-16s %-7s %-4s %-4s %-6s %s\n' "${N_NAME[$i]}" "${N_HOST[$i]}" \
+      "${N_VENDOR[$i]}" "${N_COUNT[$i]}" "${N_PCI[$i]}" "${N_DRIVER[$i]}" "${N_SEEN[$i]}"
+  done
+  return 0
+}
+
+# --- Checks --------------------------------------------------------------------
+valid_name()   { [[ "$1" =~ ^[a-z0-9][a-z0-9-]*$ ]]; }
+valid_vendor() { [[ " $VENDORS " == *" $1 "* ]]; }
+valid_count()  { [[ "$1" =~ ^[0-9]+$ ]]; }
+
+# --- Prepare -------------------------------------------------------------------
+# The one step on a new node before Ansible can reach it. Printed with the key
+# filled in, so there is nothing to edit: paste it on the node's console as
+# root, or as a user with sudo. Safe to paste again.
+nonint_print_node_prep() {
+  local key
+  [ -r "$CONTROL_KEY" ] \
+    || die "$CONTROL_KEY is missing: run scn-config's Control Node Setup first"
+  key="$(cat "$CONTROL_KEY")"
+  cat <<EOF
+# corliss-ops node prep, from $(hostname) at corliss-ops $VERSION.
+# Paste on the new node as root or a sudo user. Safe to paste again.
+cat > /tmp/corliss-node-prep.sh <<'CORLISS_PREP'
+set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
+need=""
+command -v sshd >/dev/null || [ -x /usr/sbin/sshd ] || need="\$need openssh-server"
+command -v python3 >/dev/null || need="\$need python3"
+command -v sudo >/dev/null || need="\$need sudo"
+if [ -n "\$need" ]; then apt-get update -qq && apt-get install -y -qq \$need; fi
+id ansible >/dev/null 2>&1 || useradd --create-home --shell /bin/bash ansible
+# '*' rather than the locked '!': no password, but not a locked account.
+usermod -p '*' ansible
+install -d -m 0700 -o ansible -g ansible /home/ansible/.ssh
+keys=/home/ansible/.ssh/authorized_keys
+touch "\$keys"
+grep -qxF '$key' "\$keys" || echo '$key' >> "\$keys"
+chown ansible:ansible "\$keys"; chmod 0600 "\$keys"
+echo 'ansible ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ansible.new
+visudo -cqf /etc/sudoers.d/ansible.new
+chmod 0440 /etc/sudoers.d/ansible.new
+mv /etc/sudoers.d/ansible.new /etc/sudoers.d/ansible
+echo "node prep done. Addresses: \$(hostname -I)"
+CORLISS_PREP
+if [ "\$(id -u)" -eq 0 ]; then bash /tmp/corliss-node-prep.sh; else sudo bash /tmp/corliss-node-prep.sh; fi
+rm -f /tmp/corliss-node-prep.sh
+EOF
+}
+
+# --- Register, facts, remove ---------------------------------------------------
+nonint_collect_facts() {
+  if [ $# -gt 0 ]; then
+    local IFS=,
+    ansible-playbook node-facts.yml --limit "$*"
+  else
+    ansible-playbook node-facts.yml
+  fi
+}
+
+nonint_register() {
+  [ $# -ge 3 ] && [ $# -le 4 ] \
+    || die "usage: node-config nonint register <name> <address> <nvidia|intel> [gpu_count]"
+  local name="$1" host="$2" vendor="$3" count="${4:-}" args
+  valid_name "$name" || die "$name: a node name is lowercase letters, digits and hyphens"
+  valid_vendor "$vendor" || die "$vendor: the GPU vendor is one of: $VENDORS"
+  [ -z "$count" ] || valid_count "$count" || die "$count: the GPU count is a whole number"
+  args=(-e "name=$name" -e "ansible_host=$host" -e "gpu_vendor=$vendor")
+  [ -n "$count" ] && args+=(-e "gpu_count=$count")
+  ansible-playbook enroll-inference-node.yml "${args[@]}"
+  echo
+  if ! ansible-playbook node-facts.yml --limit "$name"; then
+    echo
+    echo "node-config: $name is recorded, but its facts could not be read."
+    echo "node-config: if it is unreachable, paste the block from"
+    echo "node-config:   node-config nonint print-node-prep"
+    echo "node-config: on the node, then: node-config nonint collect-facts $name"
+    return 1
+  fi
+}
+
+nonint_show_nodes() {
+  load_nodes
+  if [ "${#N_NAME[@]}" -eq 0 ]; then
+    echo "No inference nodes are registered."
+    return 0
+  fi
+  nodes_table
+}
+
+nonint_remove() {
+  [ $# -eq 1 ] || die "usage: node-config nonint remove <name>"
+  valid_name "$1" || die "$1: a node name is lowercase letters, digits and hyphens"
+  ansible-playbook enroll-inference-node.yml -e "name=$1" -e state=absent
+  [ -d "$FACTS_DIR/$1" ] && echo "node-config: $1's facts history stays in $FACTS_DIR/$1."
+  return 0
+}
+
+# --- Interactive mode ----------------------------------------------------------
+calc_wt_size() {
+  WT_WIDTH="$(tput cols 2>/dev/null || echo 80)"
+  WT_MAX_HEIGHT=$(( $(tput lines 2>/dev/null || echo 24) - 2 ))
+  [ "$WT_WIDTH" -gt 78 ] && WT_WIDTH=78
+  return 0
+}
+
+box_height() {  # box_height <text> <chrome>
+  local height=$(( $(wc -l <<<"$1") + $2 ))
+  [ "$height" -gt "$WT_MAX_HEIGHT" ] && height="$WT_MAX_HEIGHT"
+  echo "$height"
+}
+
+msgbox() {  # msgbox <title> <text>
+  whiptail --backtitle "$BACKTITLE" --title "$1" \
+    --msgbox "$2" "$(box_height "$2" 7)" "$WT_WIDTH"
+}
+
+ask() {  # ask <title> <prompt> <default>
+  whiptail --backtitle "$BACKTITLE" --title "$1" \
+    --inputbox "$2" "$(box_height "$2" 8)" "$WT_WIDTH" "$3" 3>&1 1>&2 2>&3
+}
+
+pause() { read -r -p "Press Enter to return to the menu. " </dev/tty || true; }
+
+# Leaves whiptail: the block is for copying, and a dialog can't be copied from.
+do_prepare_menu() {
+  local text="Prints a block to paste on the new node's console, as root or a
+user with sudo. It creates the ansible user, gives it sudo without a
+password, and installs this control node's SSH key. Safe to paste again.
+
+Then come back and Register the node."
+  whiptail --backtitle "$BACKTITLE" --title "Prepare a Node" \
+    --yes-button Print --no-button Back \
+    --yesno "$text" "$(box_height "$text" 7)" "$WT_WIDTH" || return 0
+  clear
+  nonint_print_node_prep || true
+  echo
+  pause
+}
+
+do_register_menu() {
+  local name="" host="" vendor count="" i=""
+  load_nodes
+  while true; do
+    name="$(ask "Register a Node" "Node name: lowercase letters, digits and hyphens.
+Registering a name again updates it." "$name")" || return 0
+    valid_name "$name" && break
+    msgbox "Register a Node" "A node name is lowercase letters, digits and hyphens."
+  done
+  if i="$(node_index "$name")"; then
+    host="${N_HOST[$i]#-}" count="${N_COUNT[$i]#-}"
+  fi
+  while true; do
+    host="$(ask "Register a Node" "Address of $name (IP or DNS name) that this control node can reach over SSH." "$host")" || return 0
+    [ -n "$host" ] && break
+  done
+  vendor="$(whiptail --backtitle "$BACKTITLE" --title "Register a Node" \
+    --radiolist "GPU vendor on $name. It decides which driver stack the node gets." \
+    10 "$WT_WIDTH" 2 \
+    nvidia " NVIDIA (CUDA)" "$([ -n "$i" ] && [ "${N_VENDOR[$i]}" = intel ] && echo OFF || echo ON)" \
+    intel " Intel Max (Level Zero)" "$([ -n "$i" ] && [ "${N_VENDOR[$i]}" = intel ] && echo ON || echo OFF)" \
+    3>&1 1>&2 2>&3)" || return 0
+  while true; do
+    count="$(ask "Register a Node" "How many GPUs $name should have. The health check expects this many." "$count")" || return 0
+    valid_count "$count" && break
+    msgbox "Register a Node" "The GPU count is a whole number."
+  done
+  clear
+  nonint_register "$name" "$host" "$vendor" "$count" </dev/null || true
+  echo
+  pause
+}
+
+do_nodes_menu() {
+  local text
+  load_nodes
+  if [ "${#N_NAME[@]}" -eq 0 ]; then
+    msgbox "Nodes" "No inference nodes are registered. Prepare a node, then Register it."
+    return 0
+  fi
+  text="$(nodes_table)
+
+GPUs is the count registered; PCI is what the last facts record saw.
+Records are in $FACTS_DIR/<node>/."
+  msgbox "Nodes" "$text"
+}
+
+do_facts_menu() {
+  clear
+  nonint_collect_facts </dev/null || true
+  echo
+  pause
+}
+
+do_remove_menu() {
+  local args=() i name text
+  load_nodes
+  [ "${#N_NAME[@]}" -gt 0 ] || { msgbox "Remove a Node" "No inference nodes are registered."; return 0; }
+  for i in "${!N_NAME[@]}"; do args+=("${N_NAME[$i]}" " ${N_HOST[$i]} (${N_VENDOR[$i]})"); done
+  name="$(whiptail --backtitle "$BACKTITLE" --title "Remove a Node" \
+    --menu "Drop a node's config. The node itself is not touched." \
+    16 "$WT_WIDTH" 8 "${args[@]}" 3>&1 1>&2 2>&3)" || return 0
+  text="Remove $name from the inventory? Ansible stops managing it; nothing
+on the node changes, and its facts history stays in $FACTS_DIR/$name."
+  whiptail --backtitle "$BACKTITLE" --title "Remove a Node" \
+    --yes-button Remove --no-button Back \
+    --yesno "$text" "$(box_height "$text" 7)" "$WT_WIDTH" || return 0
+  clear
+  nonint_remove "$name" </dev/null || true
+  echo
+  pause
+}
+
+interactive() {
+  local choice
+  [ -t 0 ] && [ -t 1 ] || die "the menu needs a terminal — see: node-config nonint"
+  command -v whiptail >/dev/null \
+    || die "whiptail is not installed — run: apt-get install whiptail"
+  calc_wt_size
+  while true; do
+    choice="$(whiptail --backtitle "$BACKTITLE" --title "$TITLE" \
+      --ok-button Select --cancel-button Finish \
+      --menu "" 15 "$WT_WIDTH" 5 \
+      "1 Prepare a Node" " The block to paste on a new node" \
+      "2 Register a Node" " Name, address, GPUs; check SSH, record facts" \
+      "3 Nodes" " Each node's config and last facts" \
+      "4 Collect Facts" " Record every node's facts again" \
+      "5 Remove a Node" " Drop a node's config" \
+      3>&1 1>&2 2>&3)" || exit 0
+    case "$choice" in
+      1\ *) do_prepare_menu ;;
+      2\ *) do_register_menu ;;
+      3\ *) do_nodes_menu ;;
+      4\ *) do_facts_menu ;;
+      5\ *) do_remove_menu ;;
+    esac
+  done
+}
+
+# --- Dispatch ------------------------------------------------------------------
+case "${1:-}" in
+  "") interactive ;;
+  nonint)
+    shift
+    case "${1:-}" in
+      print-node-prep) nonint_print_node_prep ;;
+      register) shift; nonint_register "$@" ;;
+      show-nodes) nonint_show_nodes ;;
+      collect-facts) shift; nonint_collect_facts "$@" ;;
+      remove) shift; nonint_remove "$@" ;;
+      *) usage ;;
+    esac
+    ;;
+  *) usage ;;
+esac

@@ -187,7 +187,7 @@ class CallbackModule(CallbackBase):
                 ("bucket", "manifest_bucket"),
                 ("access", "manifest_writer_access_key"),
                 ("secret", "manifest_writer_secret_key"),
-                ("zai_ops", "zai_ops_revision"),
+                ("zai_ops", "ops_version"),
             )
         }
 

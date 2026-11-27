@@ -21,7 +21,8 @@ that state so the "restore" half exists:
 | `/root/.vault_pass` | Decrypts the vault; host root is the trust boundary. |
 | `/root/.ssh/id_ed25519{,.pub}` | The key injected into every service CT — changing it locks Ansible out. |
 | `/root/.zai-secrets` | Auto-generated secrets (object-store key, restic repo password) — a fresh CT 100 would regenerate different ones. |
-| `inventory/local.yml` *(if present)* | The inference-node roster; git-ignored runtime data. |
+| `inventory/local.yml` *(if present)* | The cluster's config: CTID assignments, domains, versions, and each inference node's entry. Git-ignored runtime data. |
+| `/var/lib/corliss-ops/nodes` *(if present)* | node-config's facts history: what each inference node ran against its config, by date ([ADR-0014](../decisions/0014-node-config.md)). |
 
 It uses **restic** (encrypted, deduplicated, snapshotted) against the Garage S3
 bucket, on a **daily systemd timer**. restic is an implementation detail —

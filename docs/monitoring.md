@@ -145,8 +145,8 @@ each way also gives the machine its alerts.
 - **The Proxmox host** (**host**):
 
   ```sh
-  git -C /root/zai-ops pull
-  /root/zai-ops/host/install-monitor-agent.sh        # add the control node's CTID if it isn't 100
+  git -C /opt/corliss-ops pull
+  /opt/corliss-ops/host/install-monitor-agent.sh        # add the control node's CTID if it isn't 100
   ```
 
   It reads what it needs from CT 100, ends with `connected to …`, and puts the

@@ -66,7 +66,7 @@ set -euo pipefail
 cd "$(dirname "$(readlink -f "$0")")/../ansible"
 
 TITLE="SCN Configuration Tool (scn-config)"
-# The same `git describe` the service manifests record (zai_ops_revision in
+# The same `git describe` the service manifests record (ops_version in
 # group_vars/all/main.yml), so the version here and on Corliss's /systems/ agree.
 VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo unknown)"
 BACKTITLE="Shared Computer Network — $(hostname) — zai-ops $VERSION"

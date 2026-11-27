@@ -28,10 +28,13 @@ backup_paths=(
   /root/.ssh/id_ed25519.pub
   /root/.zai-secrets                              # auto-generated secrets (object-store key, restic pw)
 )
-# Backed up only if present — the inference-node roster doesn't exist until the
-# first node is enrolled.
+# Backed up only if present: neither exists until the first assignment or node.
+# local.yml is the cluster's config (CTIDs, domains, inference nodes); the
+# nodes directory is node-config's facts history, the record of what each node
+# ran against that config (ADR-0014).
 backup_optional_paths=(
   /opt/zai-ops/ansible/inventory/local.yml
+  /var/lib/corliss-ops/nodes
 )
 # restic forget --prune retention, applied after each run.
 keep_daily=7
