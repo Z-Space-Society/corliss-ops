@@ -4,8 +4,8 @@
 # Remove a node); this is the playbook underneath it.
 #
 #   ansible-playbook enroll-inference-node.yml \
-#     -e "name=q02b ansible_host=192.168.6.80 gpu_vendor=nvidia gpu_count=2"
-#   ansible-playbook enroll-inference-node.yml -e "name=q02b state=absent"
+#     -e "node=q02b ansible_host=192.168.6.82 gpu_vendor=nvidia gpu_count=4"
+#   ansible-playbook enroll-inference-node.yml -e "node=q02b state=absent"
 #
 # The node's entry is its config: the decisions someone made about it (which
 # address, which GPU vendor and how many cards, what it serves). Those are
@@ -20,7 +20,7 @@
 #
 # Serving vars are optional; omit them to take the llama_server role defaults,
 # or pass them here (JSON form is easiest for lists), e.g.:
-#   -e '{"name":"q02b","ansible_host":"192.168.6.80","gpu_vendor":"nvidia",
+#   -e '{"node":"q02b","ansible_host":"192.168.6.82","gpu_vendor":"nvidia",
 #        "llama_model_file":"Apertus-8B-Instruct-2509-Q5_K_M.gguf",
 #        "llama_extra_args":["--jinja","--tensor-split","1,1"]}'
 # Registering again merges into the existing entry, so a key not passed keeps
@@ -40,12 +40,12 @@
     - name: Require a valid name and state
       ansible.builtin.assert:
         that:
-          - name is defined
-          - name | string is match('^[a-z0-9][a-z0-9-]*$')
+          - node is defined
+          - node | string is match('^[a-z0-9][a-z0-9-]*$')
           - node_state in ['present', 'absent']
         fail_msg: >-
-          Pass name (lowercase letters, digits and hyphens) and optionally
-          state=present|absent, e.g. -e "name=q02b state=absent"
+          Pass node (lowercase letters, digits and hyphens) and optionally
+          state=present|absent, e.g. -e "node=q02b state=absent"
         quiet: true
 
     - name: Require an address and a known vendor to register
@@ -57,7 +57,7 @@
         fail_msg: >-
           Pass ansible_host and gpu_vendor ({{ vendor_groups.keys() | join(' or ') }}),
           and gpu_count as a whole number if given, e.g.
-          -e "name=q02b ansible_host=192.168.6.80 gpu_vendor=nvidia gpu_count=2"
+          -e "node=q02b ansible_host=192.168.6.82 gpu_vendor=nvidia gpu_count=4"
         quiet: true
       when: node_state == 'present'
 
@@ -71,7 +71,7 @@
     # one vendor group, moving it out of wherever it was.
     - name: Read the node's recorded entry
       ansible.builtin.set_fact:
-        prior_entry: "{{ runtime_data | inference_node_entry(name) }}"
+        prior_entry: "{{ runtime_data | inference_node_entry(node) }}"
 
     # Only keys the operator supplied change, so a value not passed keeps what
     # was recorded, and unset serving vars fall through to the role defaults.
@@ -92,12 +92,12 @@
 
     - name: Place the node in its vendor group
       ansible.builtin.set_fact:
-        new_data: "{{ runtime_data | inference_node_set(name, vendor_groups[gpu_vendor], node_entry) }}"
+        new_data: "{{ runtime_data | inference_node_set(node, vendor_groups[gpu_vendor], node_entry) }}"
       when: node_state == 'present'
 
     - name: Drop the node
       ansible.builtin.set_fact:
-        new_data: "{{ runtime_data | inference_node_drop(name) }}"
+        new_data: "{{ runtime_data | inference_node_drop(node) }}"
       when: node_state == 'absent'
 
     - name: Write the runtime inventory
@@ -109,7 +109,7 @@
     - name: Report
       ansible.builtin.debug:
         msg: >-
-          {{ ('Recorded ' ~ name ~ ' (' ~ ansible_host ~ ') in ' ~ vendor_groups[gpu_vendor])
+          {{ ('Recorded ' ~ node ~ ' (' ~ ansible_host ~ ') in ' ~ vendor_groups[gpu_vendor])
              if node_state == 'present'
-             else ('Dropped ' ~ name ~ ' from the runtime inventory' if prior_entry
-                   else name ~ ' was not recorded; nothing to drop') }}
+             else ('Dropped ' ~ node ~ ' from the runtime inventory' if prior_entry
+                   else node ~ ' was not recorded; nothing to drop') }}

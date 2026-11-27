@@ -185,7 +185,7 @@ flowchart LR
     subgraph phase5["5 · steady state"]
         direction TB
         s1["ansible-playbook backup.yml<br/>daily restic timer to the object store"]
-        s2["enroll-inference-node.yml -e name=salmon<br/>then inference.yml --limit salmon"]
+        s2["node-config: prepare, register, health<br/>then inference.yml for each NVIDIA node"]
         s3["add-github-user.yml<br/>human admin accounts from GitHub keys"]
     end
 

@@ -159,16 +159,19 @@ itself from this repo.
    `pg_dumpall` from the postgres CT (Tier 2). See
    [Backups](docs/README.md#backups).
 
-6. Bring the bare-metal inference nodes (salmon, orca, …) into the cluster.
-   Enrolling records the node in a git-ignored runtime inventory on the control
-   node (names/IPs stay out of the repo); a second playbook configures it
-   (NVIDIA driver + CUDA, then builds llama.cpp). Each node needs one-time prep
-   first — Secure Boot off, an `ansible` user with sudo and CT 100's key. See
+6. Register the inference nodes with `node-config`: machines with GPUs that CT
+   100 reaches over SSH, bare metal or a VM with passed-through cards. Prepare
+   prints a block to paste on the node (an `ansible` user with sudo and CT
+   100's key); Register records the node's config in the git-ignored runtime
+   inventory and its facts; Health Check compares what the node shows against
+   that config. NVIDIA nodes are then configured with `inference.yml`. See
    [docs](docs/README.md#inference-nodes).
 
    ```bash
-   ansible-playbook enroll-inference-node.yml -e "name=salmon ansible_host=192.168.6.63"
-   ansible-playbook inference.yml --limit salmon
+   node-config nonint print-node-prep             # paste the output on the node
+   node-config nonint register q02b 192.168.6.82 nvidia 4
+   node-config nonint health q02b
+   ansible-playbook inference.yml --limit q02b
    ```
 
 7. (Optional) Give a person a login. Pulls their public keys from
